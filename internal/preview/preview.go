@@ -145,18 +145,33 @@ func (s *Service) Start(cameraID int64, rtspURL string) error {
 		return errors.New("hech qanday H.264 encoder topilmadi (FFmpeg buildni qayta o'rnating)")
 	}
 
+	// Rezolyutsiya — encoder turiga qarab adaptiv
+	// GPU encoderlar 720p osongina ko'taradi
+	// CPU encoderlar uchun 480p — eski/zaif PC'larda ham silliq ishlaydi
+	isGPU := enc == "h264_nvenc" || enc == "h264_qsv" || enc == "h264_amf"
+	scale := "scale=-2:480"
+	if isGPU {
+		scale = "scale=-2:720"
+	}
+
 	args := []string{
 		"-hide_banner",
 		"-loglevel", "info", // info darajada — connection holatini ko'rish uchun
+	}
+
+	// Hardware decode — har qanday GPU (NVIDIA/AMD/Intel iGPU) bilan ishlaydi.
+	// HEVC decode'ni GPU'da bajarib, CPU'ni faqat encode uchun bo'shatadi.
+	// Yo'q bo'lsa, FFmpeg avtomatik software decode'ga qaytadi.
+	args = append(args, "-hwaccel", "auto")
+
+	args = append(args,
 		"-rtsp_transport", "tcp",
 		"-i", rtspURL,
-
-		// Video — encoder dinamik tanlanadi
 		"-c:v", enc,
-	}
+	)
 	args = append(args, previewEncoderArgs(enc)...)
 	args = append(args,
-		"-vf", "scale=-2:720", // 720p preview uchun yetarli
+		"-vf", scale,
 		"-an", // audio o'chirilgan
 		"-pix_fmt", "yuv420p",
 		"-f", "hls",

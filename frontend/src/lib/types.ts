@@ -26,7 +26,7 @@ export interface Camera {
 
 export type Layout = "single" | "1x2" | "2x1" | "2x2" | "3x3" | "pip";
 export type Quality = "720p30" | "720p60" | "1080p30" | "1080p60" | "1440p30";
-export type Encoder = "auto" | "h264_nvenc" | "h264_qsv" | "libx264" | "copy";
+export type Encoder = "auto" | "h264_nvenc" | "h264_qsv" | "h264_amf" | "libx264" | "libopenh264" | "copy";
 export type Platform = "youtube" | "twitch" | "facebook" | "custom";
 export type AudioMode = "first" | "muted" | "index";
 
@@ -81,6 +81,18 @@ export interface FFmpegStatus {
   installed: boolean;
   path: string;
   version: string;
+}
+
+export interface HardwareInfo {
+  hasGpu: boolean;
+  hasNvenc: boolean;
+  hasQuickSync: boolean;
+  hasAmf: boolean;
+  hasX264: boolean;
+  hasOpenH264: boolean;
+  hasMediaFound: boolean;
+  bestEncoder: string;
+  recommendation: string;
 }
 
 export interface FFmpegProgress {

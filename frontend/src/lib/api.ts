@@ -12,6 +12,7 @@ import type {
   StreamStatus,
   ProbeResult,
   FFmpegStatus,
+  HardwareInfo,
 } from "./types";
 
 import * as App from "../../wailsjs/go/main/App";
@@ -26,6 +27,7 @@ const A = App as any;
 export const getFFmpegStatus = (): Promise<FFmpegStatus> => A.GetFFmpegStatus();
 export const installFFmpeg = (): Promise<void> => A.InstallFFmpeg();
 export const browseFFmpegFile = (): Promise<void> => A.BrowseFFmpegFile();
+export const getHardwareInfo = (): Promise<HardwareInfo> => A.GetHardwareInfo();
 
 // Cameralar
 export const listCameras = (): Promise<Camera[]> => A.ListCameras();

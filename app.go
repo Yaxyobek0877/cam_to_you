@@ -192,6 +192,50 @@ type FFmpegStatus struct {
 	Version   string `json:"version"`
 }
 
+// HardwareInfo — foydalanuvchi PC'sida qaysi encoderlar mavjudligi.
+// UI'da Dashboard va Streams formada tavsiyalar berishda ishlatiladi.
+type HardwareInfo struct {
+	HasGPU         bool   `json:"hasGpu"`         // har qanday GPU encoder bormi?
+	HasNVENC       bool   `json:"hasNvenc"`       // NVIDIA
+	HasQuickSync   bool   `json:"hasQuickSync"`   // Intel
+	HasAMF         bool   `json:"hasAmf"`         // AMD
+	HasX264        bool   `json:"hasX264"`        // libx264 (GPL CPU)
+	HasOpenH264    bool   `json:"hasOpenH264"`    // libopenh264 (LGPL CPU)
+	HasMediaFound  bool   `json:"hasMediaFound"`  // Windows MF
+	BestEncoder    string `json:"bestEncoder"`    // tavsiya etilgan encoder
+	Recommendation string `json:"recommendation"` // foydalanuvchiga o'zbekcha tavsiya matn
+}
+
+// GetHardwareInfo — UI'ga tizim holati va tavsiyalar yuboradi.
+func (a *App) GetHardwareInfo() HardwareInfo {
+	encs := ffmpeg.DetectEncoders(a.ffmpegBin)
+	info := HardwareInfo{
+		HasNVENC:      encs.NVENC,
+		HasQuickSync:  encs.QuickSync,
+		HasAMF:        encs.AMF,
+		HasX264:       encs.X264,
+		HasOpenH264:   encs.OpenH264,
+		HasMediaFound: encs.MediaFound,
+		BestEncoder:   encs.BestH264(),
+	}
+	info.HasGPU = encs.NVENC || encs.QuickSync || encs.AMF
+
+	switch {
+	case encs.NVENC:
+		info.Recommendation = "NVIDIA GPU mavjud — 1080p/1440p streamlar oson ko'tariladi"
+	case encs.QuickSync:
+		info.Recommendation = "Intel QuickSync GPU mavjud — 1080p stream qulay"
+	case encs.AMF:
+		info.Recommendation = "AMD GPU mavjud — 1080p stream qulay"
+	case encs.X264 || encs.OpenH264:
+		info.Recommendation = "GPU encoder yo'q — CPU bilan 720p stream tavsiya etiladi. " +
+			"Hikvision sub-stream (/102) tanlasangiz, transcoding kerakmasdan ishlaydi"
+	default:
+		info.Recommendation = "Hech qanday H.264 encoder topilmadi — FFmpeg qayta o'rnating"
+	}
+	return info
+}
+
 func (a *App) GetFFmpegStatus() FFmpegStatus {
 	bin, _ := a.installer.Find()
 	status := FFmpegStatus{Installed: bin != "", Path: bin}

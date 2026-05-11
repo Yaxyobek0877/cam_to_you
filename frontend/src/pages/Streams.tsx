@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import {
   listStreams, createStream, updateStream, deleteStream,
-  startStream, stopStream, listCameras, getAllStreamStatus,
+  startStream, stopStream, listCameras, getAllStreamStatus, getHardwareInfo,
 } from "../lib/api";
 import { StateBadge } from "./Dashboard";
 import { formatUptime } from "../lib/utils";
@@ -188,6 +188,7 @@ function StreamFormModal({
   onSaved: () => void;
 }) {
   const camerasQ = useQuery({ queryKey: ["cameras"], queryFn: listCameras });
+  const hwQ = useQuery({ queryKey: ["hardware"], queryFn: getHardwareInfo });
   const [form, setForm] = useState<Partial<Stream>>(stream);
   const isNew = !form.id;
 
@@ -291,7 +292,7 @@ function StreamFormModal({
                 value={form.quality}
                 onChange={(e) => setForm({ ...form, quality: e.target.value as Quality })}
               >
-                <option value="720p30">720p @ 30fps (2.5 Mbps)</option>
+                <option value="720p30">720p @ 30fps (2.5 Mbps) — tavsiya CPU uchun</option>
                 <option value="720p60">720p @ 60fps (4.5 Mbps)</option>
                 <option value="1080p30">1080p @ 30fps (4.5 Mbps)</option>
                 <option value="1080p60">1080p @ 60fps (6 Mbps)</option>
@@ -305,14 +306,28 @@ function StreamFormModal({
                 value={form.encoder}
                 onChange={(e) => setForm({ ...form, encoder: e.target.value as Encoder })}
               >
-                <option value="auto">Avtomatik (tavsiya)</option>
-                <option value="h264_nvenc">NVIDIA NVENC (GPU)</option>
-                <option value="h264_qsv">Intel QuickSync (GPU)</option>
-                <option value="libx264">CPU (libx264)</option>
-                <option value="copy">Copy (qayta kodlamaslik)</option>
+                <option value="auto">Auto — tizimga moslashtiriladi (tavsiya)</option>
+                {hwQ.data?.hasNvenc && <option value="h264_nvenc">NVIDIA NVENC (GPU — eng tez)</option>}
+                {hwQ.data?.hasQuickSync && <option value="h264_qsv">Intel QuickSync (GPU)</option>}
+                {hwQ.data?.hasAmf && <option value="h264_amf">AMD AMF (GPU)</option>}
+                {hwQ.data?.hasX264 && <option value="libx264">libx264 (CPU sifatli)</option>}
+                {hwQ.data?.hasOpenH264 && <option value="libopenh264">OpenH264 (CPU fallback)</option>}
+                <option value="copy">Copy — qayta kodlamaslik (eng yengil)</option>
               </select>
             </div>
           </div>
+
+          {/* CPU foydalanuvchilar uchun maslahat */}
+          {hwQ.data && !hwQ.data.hasGpu && (
+            <div className="card bg-warning/10 border-warning/30 p-3 text-xs">
+              <p className="font-medium text-warning mb-1">⚠️ GPU yo'q — CPU bilan ishlash</p>
+              <ul className="space-y-1 text-gray-300 ml-2 list-disc list-inside">
+                <li><strong>720p</strong> tavsiya etiladi (1080p CPU'ni qiyinlatadi)</li>
+                <li>Encoder: <strong>"Copy"</strong> tanlasa, hech qanday encoding kerakmas (eng yengil)</li>
+                <li>Kameralarda <strong>"Sub-stream"</strong> yoqsangiz, kamera o'zi 720p H.264 yuboradi → Copy + Sub-stream = ideal kombinatsiya</li>
+              </ul>
+            </div>
+          )}
 
           <div>
             <label className="label">Audio</label>

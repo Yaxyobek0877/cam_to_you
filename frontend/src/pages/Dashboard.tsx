@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Camera, Radio, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { Activity, Camera, Radio, AlertCircle, CheckCircle2, Loader2, Cpu, Zap, Info } from "lucide-react";
 import { Link } from "react-router-dom";
-import { listCameras, listStreams, getAllStreamStatus, getFFmpegStatus } from "../lib/api";
+import { listCameras, listStreams, getAllStreamStatus, getFFmpegStatus, getHardwareInfo } from "../lib/api";
 import { formatUptime, cn } from "../lib/utils";
 import type { StreamState } from "../lib/types";
 
@@ -15,6 +15,11 @@ export function Dashboard() {
     refetchInterval: 2_000, // har 2 sekundda yangilanadi
   });
   const ffmpegQ = useQuery({ queryKey: ["ffmpeg"], queryFn: getFFmpegStatus });
+  const hwQ = useQuery({
+    queryKey: ["hardware"],
+    queryFn: getHardwareInfo,
+    enabled: ffmpegQ.data?.installed === true,
+  });
 
   const cameras = camerasQ.data ?? [];
   const streams = streamsQ.data ?? [];
@@ -81,6 +86,48 @@ export function Dashboard() {
           to="/streams"
         />
       </div>
+
+      {/* Tizim ma'lumoti (encoder, GPU) */}
+      {hwQ.data && (
+        <section className="card p-5">
+          <div className="flex items-start gap-3">
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
+              hwQ.data.hasGpu ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
+            )}>
+              {hwQ.data.hasGpu ? <Zap className="w-5 h-5" /> : <Cpu className="w-5 h-5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold flex items-center gap-2">
+                Tizim holati
+                <span className={cn(
+                  "badge text-xs",
+                  hwQ.data.hasGpu ? "badge-success" : "badge-warning",
+                )}>
+                  {hwQ.data.hasGpu ? "GPU mavjud" : "Faqat CPU"}
+                </span>
+              </h2>
+              <p className="text-sm text-gray-300 mt-1.5">{hwQ.data.recommendation}</p>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-4">
+                <EncoderBadge available={hwQ.data.hasNvenc} name="NVIDIA NVENC" hint="Eng tez" />
+                <EncoderBadge available={hwQ.data.hasQuickSync} name="Intel QSV" hint="GPU dekod" />
+                <EncoderBadge available={hwQ.data.hasAmf} name="AMD AMF" hint="AMD GPU" />
+                <EncoderBadge available={hwQ.data.hasX264} name="libx264" hint="CPU sifatli" />
+                <EncoderBadge available={hwQ.data.hasOpenH264} name="OpenH264" hint="CPU fallback" />
+                <EncoderBadge available={hwQ.data.hasMediaFound} name="MediaFoundation" hint="Windows" />
+              </div>
+
+              {hwQ.data.bestEncoder && (
+                <p className="mt-3 text-xs text-gray-500 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5" />
+                  Auto rejimda ishlatiladi: <code className="text-accent font-mono">{hwQ.data.bestEncoder}</code>
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Aktiv streamlar */}
       <section className="card p-5">
@@ -196,6 +243,25 @@ export function StateBadge({ state }: { state: StreamState }) {
       {Icon && <Icon className={cn("w-3 h-3", (state === "starting" || state === "stopping") && "animate-spin")} />}
       {info.label}
     </span>
+  );
+}
+
+function EncoderBadge({ available, name, hint }: { available: boolean; name: string; hint: string }) {
+  return (
+    <div className={cn(
+      "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs",
+      available
+        ? "bg-success/10 border border-success/30"
+        : "bg-bg-subtle border border-white/5 opacity-50",
+    )}>
+      <span className={available ? "text-success" : "text-gray-500"}>
+        {available ? "✓" : "—"}
+      </span>
+      <div className="min-w-0">
+        <div className={available ? "text-gray-200" : "text-gray-500"}>{name}</div>
+        <div className="text-gray-600 text-[10px]">{hint}</div>
+      </div>
+    </div>
   );
 }
 
