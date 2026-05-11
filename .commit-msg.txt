@@ -1,30 +1,21 @@
-feat(v0.1.5): CPU-friendly defaults + system info card + smart hints
+fix(v0.1.6): CRITICAL bug - missing -map 0:v broke stream startup
 
-Target users without GPU (most PCs) — easier path to streaming.
+Root cause: builder.go's buildSingleArgs didn't add -map 0:v for video.
+buildAudioArgs adds -map 0:a? for audio. When ffmpeg sees ANY -map flag,
+it disables automatic stream selection. Result: stream contained ONLY
+audio (or failed completely if video was needed), explaining why
+"Start" button would spin and exit immediately.
 
-PREVIEW: adaptive resolution + hardware decode
-- GPU encoders (NVENC/QSV/AMF) -> 720p
-- CPU encoders (x264/openh264/MF) -> 480p (lighter)
-- Added -hwaccel auto: HEVC decode on any GPU (NVIDIA/AMD/Intel iGPU)
-- Pure CPU systems: falls back to software decode automatically
+Verified fix by running corrected ffmpeg command against real Hikvision
+camera (192.168.200.5) - produces valid 2 MB FLV in 5 seconds.
 
-NEW API: GetHardwareInfo
-- Reports available encoders (NVENC, QSV, AMF, x264, OpenH264, MF)
-- hasGpu boolean for quick checks
-- bestEncoder for "auto" selection
-- recommendation field with user-friendly Uzbek text
-
-DASHBOARD: System status card
-- Shows GPU/CPU badge prominently
-- All encoders listed with availability checkmarks
-- Recommendation text (e.g. "CPU only -> use sub-stream + copy")
-- Highlights "auto" mode picks best available
-
-STREAM FORM: CPU recommendations
-- Encoder dropdown filters to ONLY available encoders
-- Warning card if no GPU: suggests 720p + Copy + sub-stream combo
-- "720p tavsiya CPU uchun" label on quality option
-
-TYPES: added h264_amf, libopenh264 to Encoder union
+ALSO:
+- Dashboard: Tizim holati card is now collapsible (default closed)
+  - Shows GPU/CPU badge + auto encoder in collapsed header
+  - Click to expand for full encoder badge grid
+  - Cleaner default look, info available on demand
+- Streams: inline error message when Start button fails
+  - Shows reason directly under stream name
+  - No longer "silent failure" — user sees what happened
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

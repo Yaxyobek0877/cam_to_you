@@ -48,9 +48,16 @@ export function Streams() {
   });
   const [editing, setEditing] = useState<Partial<Stream> | null>(null);
 
+  const [startError, setStartError] = useState<{ streamId: number; msg: string } | null>(null);
   const startMut = useMutation({
     mutationFn: startStream,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["allStatus"] }),
+    onSuccess: () => {
+      setStartError(null);
+      qc.invalidateQueries({ queryKey: ["allStatus"] });
+    },
+    onError: (err, streamId) => {
+      setStartError({ streamId, msg: String(err) });
+    },
   });
   const stopMut = useMutation({
     mutationFn: stopStream,
@@ -120,6 +127,11 @@ export function Streams() {
                       {st?.lastError && st.state === "error" && (
                         <p className="text-xs text-danger mt-1 truncate" title={st.lastError}>
                           {st.lastError}
+                        </p>
+                      )}
+                      {startError && startError.streamId === s.id && (
+                        <p className="text-xs text-danger mt-1 break-words" title={startError.msg}>
+                          ⚠ Ishga tushmadi: {startError.msg}
                         </p>
                       )}
                     </div>

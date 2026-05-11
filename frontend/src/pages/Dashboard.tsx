@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Camera, Radio, AlertCircle, CheckCircle2, Loader2, Cpu, Zap, Info } from "lucide-react";
+import { Activity, Camera, Radio, AlertCircle, CheckCircle2, Loader2, Cpu, Zap, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { listCameras, listStreams, getAllStreamStatus, getFFmpegStatus, getHardwareInfo } from "../lib/api";
 import { formatUptime, cn } from "../lib/utils";
@@ -20,6 +21,9 @@ export function Dashboard() {
     queryFn: getHardwareInfo,
     enabled: ffmpegQ.data?.installed === true,
   });
+
+  // Tizim holati karta default holda yopiq (boshqaruv kerakmaganda joy bermaslik)
+  const [sysExpanded, setSysExpanded] = useState(false);
 
   const cameras = camerasQ.data ?? [];
   const streams = streamsQ.data ?? [];
@@ -87,29 +91,43 @@ export function Dashboard() {
         />
       </div>
 
-      {/* Tizim ma'lumoti (encoder, GPU) */}
+      {/* Tizim ma'lumoti (encoder, GPU) — default yopiq, kerak bo'lganda ochiladi */}
       {hwQ.data && (
-        <section className="card p-5">
-          <div className="flex items-start gap-3">
+        <section className="card overflow-hidden">
+          <button
+            onClick={() => setSysExpanded(!sysExpanded)}
+            className="w-full flex items-center gap-3 p-4 hover:bg-bg-subtle/40 transition-colors text-left"
+          >
             <div className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
+              "w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0",
               hwQ.data.hasGpu ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
             )}>
-              {hwQ.data.hasGpu ? <Zap className="w-5 h-5" /> : <Cpu className="w-5 h-5" />}
+              {hwQ.data.hasGpu ? <Zap className="w-4 h-4" /> : <Cpu className="w-4 h-4" />}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-semibold flex items-center gap-2">
-                Tizim holati
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Tizim holati</span>
                 <span className={cn(
                   "badge text-xs",
                   hwQ.data.hasGpu ? "badge-success" : "badge-warning",
                 )}>
                   {hwQ.data.hasGpu ? "GPU mavjud" : "Faqat CPU"}
                 </span>
-              </h2>
-              <p className="text-sm text-gray-300 mt-1.5">{hwQ.data.recommendation}</p>
+                {hwQ.data.bestEncoder && (
+                  <span className="text-xs text-gray-500 ml-auto mr-2">
+                    Auto: <code className="text-accent font-mono">{hwQ.data.bestEncoder}</code>
+                  </span>
+                )}
+              </div>
+            </div>
+            {sysExpanded ? <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />}
+          </button>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-4">
+          {sysExpanded && (
+            <div className="px-4 pb-4 border-t border-white/5">
+              <p className="text-sm text-gray-300 mt-3">{hwQ.data.recommendation}</p>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
                 <EncoderBadge available={hwQ.data.hasNvenc} name="NVIDIA NVENC" hint="Eng tez" />
                 <EncoderBadge available={hwQ.data.hasQuickSync} name="Intel QSV" hint="GPU dekod" />
                 <EncoderBadge available={hwQ.data.hasAmf} name="AMD AMF" hint="AMD GPU" />
@@ -117,15 +135,8 @@ export function Dashboard() {
                 <EncoderBadge available={hwQ.data.hasOpenH264} name="OpenH264" hint="CPU fallback" />
                 <EncoderBadge available={hwQ.data.hasMediaFound} name="MediaFoundation" hint="Windows" />
               </div>
-
-              {hwQ.data.bestEncoder && (
-                <p className="mt-3 text-xs text-gray-500 flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5" />
-                  Auto rejimda ishlatiladi: <code className="text-accent font-mono">{hwQ.data.bestEncoder}</code>
-                </p>
-              )}
             </div>
-          </div>
+          )}
         </section>
       )}
 

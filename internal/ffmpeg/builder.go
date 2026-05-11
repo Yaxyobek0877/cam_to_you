@@ -150,12 +150,19 @@ func Build(cfg StreamConfig) ([]string, error) {
 }
 
 // buildSingleArgs — bitta kamera holatida video qismi.
+//
+// MUHIM: -map 0:v explicit qo'shilgan. Bu kerak, chunki buildAudioArgs
+// "-map 0:a?" ishlatadi va FFmpeg har qanday -map ishlatilganda
+// avtomatik stream tanlashni o'chiradi. Video map'siz qolib ketmasligi uchun.
 func buildSingleArgs(cfg StreamConfig) []string {
+	args := []string{"-map", "0:v"}
 	if cfg.Encoder == EncoderCopy {
 		// Qayta kodlash yo'q — eng yengil
-		return []string{"-c:v", "copy"}
+		args = append(args, "-c:v", "copy")
+		return args
 	}
-	return videoEncodeArgs(cfg)
+	args = append(args, videoEncodeArgs(cfg)...)
+	return args
 }
 
 // buildCompositeArgs — bir nechta kamera grid yoki PiP holatida.
