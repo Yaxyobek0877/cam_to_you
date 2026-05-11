@@ -1,0 +1,44 @@
+# Build artefaktlari
+build/bin/
+*.exe
+*.dll
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+
+# Wails avtomatik generatsiya qilingan TS bindings — talab bo'yicha qayta yaratiladi
+# (saqlasak ham bo'ladi, lekin ko'pchilik Wails loyihalari saqlamaydi)
+frontend/wailsjs/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs va vaqtinchalik fayllar
+*.log
+*.tmp
+*.bak
+
+# Foydalanuvchi ma'lumotlari (lokal test)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Env fayllar (sirlar)
+.env
+.env.local
+.env.*.local
+
+# Go
+*.test
+*.out
+coverage.txt
+vendor/

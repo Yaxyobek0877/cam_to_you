@@ -1,0 +1,410 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Plus, Radio, Edit2, Trash2, X, Loader2, Play, Square, RotateCw,
+} from "lucide-react";
+import {
+  listStreams, createStream, updateStream, deleteStream,
+  startStream, stopStream, listCameras, getAllStreamStatus,
+} from "../lib/api";
+import { StateBadge } from "./Dashboard";
+import { formatUptime } from "../lib/utils";
+import type { Stream, Layout as LayoutType, Quality, Platform, Encoder, AudioMode } from "../lib/types";
+
+const layoutInfo: Record<LayoutType, { label: string; needs: number; preview: string }> = {
+  single:  { label: "Bitta kamera",       needs: 1, preview: "□" },
+  "1x2":   { label: "2 ta yonma-yon",     needs: 2, preview: "□□" },
+  "2x1":   { label: "2 ta ustma-ust",     needs: 2, preview: "▤" },
+  "2x2":   { label: "2×2 (4 kamera)",     needs: 4, preview: "▦" },
+  "3x3":   { label: "3×3 (9 kamera)",     needs: 9, preview: "▩" },
+  pip:     { label: "Picture-in-Picture", needs: 2, preview: "▣" },
+};
+
+const emptyStream: Partial<Stream> = {
+  name: "",
+  layout: "single",
+  cameraIds: [],
+  quality: "1080p30",
+  encoder: "auto",
+  audioMode: "first",
+  audioCameraIndex: 0,
+  platform: "youtube",
+  streamKey: "",
+  customUrl: "",
+  autoRestart: true,
+  maxRestarts: 0,
+  restartDelayMs: 5000,
+};
+
+export function Streams() {
+  const qc = useQueryClient();
+  const streamsQ = useQuery({ queryKey: ["streams"], queryFn: listStreams });
+  const statusQ = useQuery({
+    queryKey: ["allStatus"],
+    queryFn: getAllStreamStatus,
+    refetchInterval: 2_000,
+  });
+  const [editing, setEditing] = useState<Partial<Stream> | null>(null);
+
+  const startMut = useMutation({
+    mutationFn: startStream,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["allStatus"] }),
+  });
+  const stopMut = useMutation({
+    mutationFn: stopStream,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["allStatus"] }),
+  });
+  const delMut = useMutation({
+    mutationFn: deleteStream,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["streams"] }),
+  });
+
+  const streams = streamsQ.data ?? [];
+  const status = statusQ.data ?? {};
+
+  return (
+    <div className="p-6 space-y-6">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Streamlar</h1>
+          <p className="text-sm text-gray-400 mt-1">
+            YouTube va boshqa platformalarga uzatuvchi konfiguratsiyalar
+          </p>
+        </div>
+        <button onClick={() => setEditing(emptyStream)} className="btn-primary">
+          <Plus className="w-4 h-4" />
+          Yangi stream
+        </button>
+      </header>
+
+      {streamsQ.isLoading ? (
+        <div className="card p-12 flex items-center justify-center text-gray-500">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" />
+          Yuklanmoqda...
+        </div>
+      ) : streams.length === 0 ? (
+        <div className="card p-12 flex flex-col items-center justify-center text-center">
+          <Radio className="w-12 h-12 text-gray-500 mb-3" />
+          <p className="font-medium">Hali stream yo'q</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Avval bitta kamerali oddiy stream'dan boshlang
+          </p>
+          <button onClick={() => setEditing(emptyStream)} className="btn-primary mt-4">
+            <Plus className="w-4 h-4" />
+            Birinchi stream'ni yarating
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {streams.map((s) => {
+            const st = status[s.id];
+            const isRunning = st?.state === "running" || st?.state === "starting";
+            return (
+              <div key={s.id} className="card p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-bg-subtle flex items-center justify-center flex-shrink-0">
+                      <span className="text-lg">{layoutInfo[s.layout].preview}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold truncate">{s.name}</h3>
+                        <StateBadge state={st?.state ?? "idle"} />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {layoutInfo[s.layout].label} • {s.quality} • {s.platform}
+                        {st?.state === "running" && ` • ${formatUptime(st.uptime)}`}
+                      </p>
+                      {st?.lastError && st.state === "error" && (
+                        <p className="text-xs text-danger mt-1 truncate" title={st.lastError}>
+                          {st.lastError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {isRunning ? (
+                      <button
+                        onClick={() => stopMut.mutate(s.id)}
+                        disabled={stopMut.isPending}
+                        className="btn-danger"
+                      >
+                        <Square className="w-4 h-4" />
+                        To'xtatish
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => startMut.mutate(s.id)}
+                        disabled={startMut.isPending}
+                        className="btn-primary"
+                      >
+                        <Play className="w-4 h-4" />
+                        Ishga tushirish
+                      </button>
+                    )}
+                    <button onClick={() => setEditing(s)} className="btn-ghost p-2">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => { if (confirm(`"${s.name}" o'chirilsinmi?`)) delMut.mutate(s.id); }}
+                      className="btn-ghost p-2 hover:text-danger"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <StreamFormModal
+          stream={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            qc.invalidateQueries({ queryKey: ["streams"] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================== Form Modal ==============================
+
+function StreamFormModal({
+  stream,
+  onClose,
+  onSaved,
+}: {
+  stream: Partial<Stream>;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const camerasQ = useQuery({ queryKey: ["cameras"], queryFn: listCameras });
+  const [form, setForm] = useState<Partial<Stream>>(stream);
+  const isNew = !form.id;
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      if (isNew) return createStream(form);
+      return updateStream(form as Stream);
+    },
+    onSuccess: onSaved,
+  });
+
+  const cameras = camerasQ.data ?? [];
+  const needs = layoutInfo[form.layout ?? "single"].needs;
+  const cameraIds = form.cameraIds ?? [];
+
+  const setCamera = (slot: number, id: number) => {
+    const next = [...cameraIds];
+    while (next.length <= slot) next.push(0);
+    next[slot] = id;
+    setForm({ ...form, cameraIds: next });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="card w-full max-w-3xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-white/5">
+          <h2 className="text-lg font-semibold">{isNew ? "Yangi stream" : "Stream'ni tahrirlash"}</h2>
+          <button onClick={onClose} className="btn-ghost p-1"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div>
+            <label className="label">Nom</label>
+            <input
+              className="input"
+              placeholder="Masalan: Asosiy YouTube stream"
+              value={form.name ?? ""}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </div>
+
+          {/* Layout */}
+          <div>
+            <label className="label">Layout — kameralarni qanday joylashtirish</label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {(Object.keys(layoutInfo) as LayoutType[]).map((k) => {
+                const info = layoutInfo[k];
+                const active = form.layout === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setForm({ ...form, layout: k, cameraIds: [] })}
+                    className={`p-3 rounded-lg border text-center transition-colors ${
+                      active ? "bg-accent/10 border-accent text-accent" : "bg-bg-subtle border-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="text-2xl">{info.preview}</div>
+                    <div className="text-xs mt-1 leading-tight">{info.label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Kamera tanlash */}
+          <div>
+            <label className="label">Kameralar ({needs} ta kerak)</label>
+            {cameras.length === 0 ? (
+              <p className="text-sm text-warning">Avval kamera qo'shing</p>
+            ) : (
+              <div className="space-y-2">
+                {Array.from({ length: needs }).map((_, slot) => (
+                  <div key={slot} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 w-16">
+                      {slot === 0 ? "Asosiy" : `${slot + 1}-slot`}
+                    </span>
+                    <select
+                      className="input"
+                      value={cameraIds[slot] ?? 0}
+                      onChange={(e) => setCamera(slot, Number(e.target.value))}
+                    >
+                      <option value={0}>— tanlang —</option>
+                      {cameras.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.host})</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Sifat</label>
+              <select
+                className="input"
+                value={form.quality}
+                onChange={(e) => setForm({ ...form, quality: e.target.value as Quality })}
+              >
+                <option value="720p30">720p @ 30fps (2.5 Mbps)</option>
+                <option value="720p60">720p @ 60fps (4.5 Mbps)</option>
+                <option value="1080p30">1080p @ 30fps (4.5 Mbps)</option>
+                <option value="1080p60">1080p @ 60fps (6 Mbps)</option>
+                <option value="1440p30">1440p @ 30fps (9 Mbps)</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Encoder</label>
+              <select
+                className="input"
+                value={form.encoder}
+                onChange={(e) => setForm({ ...form, encoder: e.target.value as Encoder })}
+              >
+                <option value="auto">Avtomatik (tavsiya)</option>
+                <option value="h264_nvenc">NVIDIA NVENC (GPU)</option>
+                <option value="h264_qsv">Intel QuickSync (GPU)</option>
+                <option value="libx264">CPU (libx264)</option>
+                <option value="copy">Copy (qayta kodlamaslik)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Audio</label>
+            <select
+              className="input"
+              value={form.audioMode}
+              onChange={(e) => setForm({ ...form, audioMode: e.target.value as AudioMode })}
+            >
+              <option value="first">Birinchi kameradan</option>
+              <option value="muted">Audio yo'q (muted)</option>
+              <option value="index">Aniq kamera...</option>
+            </select>
+            {form.audioMode === "index" && (
+              <select
+                className="input mt-2"
+                value={form.audioCameraIndex}
+                onChange={(e) => setForm({ ...form, audioCameraIndex: Number(e.target.value) })}
+              >
+                {Array.from({ length: needs }).map((_, i) => (
+                  <option key={i} value={i}>{i === 0 ? "Asosiy" : `${i + 1}-slot`} kamera</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <hr className="border-white/5" />
+
+          <div>
+            <label className="label">Platform</label>
+            <select
+              className="input"
+              value={form.platform}
+              onChange={(e) => setForm({ ...form, platform: e.target.value as Platform })}
+            >
+              <option value="youtube">YouTube Live</option>
+              <option value="twitch">Twitch</option>
+              <option value="facebook">Facebook Live</option>
+              <option value="custom">Custom RTMP</option>
+            </select>
+          </div>
+
+          {form.platform === "custom" ? (
+            <div>
+              <label className="label">RTMP URL (stream key bilan)</label>
+              <input
+                className="input font-mono text-xs"
+                placeholder="rtmp://server/app/STREAM_KEY"
+                value={form.customUrl ?? ""}
+                onChange={(e) => setForm({ ...form, customUrl: e.target.value })}
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="label">Stream Key</label>
+              <input
+                className="input font-mono text-xs"
+                placeholder="xxxx-xxxx-xxxx-xxxx"
+                value={form.streamKey ?? ""}
+                onChange={(e) => setForm({ ...form, streamKey: e.target.value })}
+              />
+            </div>
+          )}
+
+          {/* Auto-restart */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="autoRestart"
+                checked={form.autoRestart ?? false}
+                onChange={(e) => setForm({ ...form, autoRestart: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="autoRestart" className="text-sm">
+                Uzilsa avtomatik qayta urinish
+              </label>
+            </div>
+          </div>
+
+          {saveMut.error && (
+            <div className="text-sm text-danger">{String(saveMut.error)}</div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-5 border-t border-white/5">
+          <button onClick={onClose} className="btn-secondary">Bekor qilish</button>
+          <button
+            onClick={() => saveMut.mutate()}
+            disabled={!form.name || saveMut.isPending}
+            className="btn-primary"
+          >
+            {saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Saqlash
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

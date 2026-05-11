@@ -1,0 +1,220 @@
+// Package preview — kameralarni jonli ko'rish uchun RTSP→HLS bridge.
+//
+// Foydalanuvchi "Jonli ko'rish" tugmasini bosganda:
+//  1. Start(cameraID, rtspURL) chaqiriladi
+//  2. FFmpeg ishga tushadi, RTSP'ni HLS segmentlariga aylantirib %APPDATA%\Cam2You\previews\{id}\ ga yozadi
+//  3. Frontend hls.js orqali /preview/{id}/index.m3u8 ni ijro etadi (AssetsHandler beradi)
+//  4. Modal yopilganda Stop(cameraID) chaqiriladi
+//
+// Tezkor diqqat: HLS taxminan 3-5 sek latentlik beradi. Sub-second emas,
+// lekin "kamera ishlayaptimi" tekshirish uchun yetarli.
+package preview
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"cam_to_you/internal/ffmpeg"
+)
+
+// Service — aktiv preview'larni boshqaradi.
+type Service struct {
+	ffmpegBin  string // ffmpeg.exe yo'li
+	previewDir string // %APPDATA%\Cam2You\previews
+
+	mu     sync.RWMutex
+	active map[int64]*session
+}
+
+// session — bitta aktiv preview.
+type session struct {
+	cameraID  int64
+	runner    *ffmpeg.Runner
+	dir       string
+	startedAt time.Time
+	cancel    context.CancelFunc
+}
+
+// New — yangi service yaratadi.
+func New(ffmpegBin, previewDir string) *Service {
+	return &Service{
+		ffmpegBin:  ffmpegBin,
+		previewDir: previewDir,
+		active:     make(map[int64]*session),
+	}
+}
+
+// SetFFmpegBin — FFmpeg auto-installer'dan keyin yangilash uchun.
+func (s *Service) SetFFmpegBin(bin string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ffmpegBin = bin
+}
+
+// Start — kamera uchun preview boshqalaydi. Allaqachon ishlayotgan bo'lsa, hech narsa qilmaydi.
+func (s *Service) Start(cameraID int64, rtspURL string) error {
+	if s.ffmpegBin == "" {
+		return errors.New("FFmpeg topilmadi — avval Settings'da o'rnating")
+	}
+	if rtspURL == "" {
+		return errors.New("RTSP URL bo'sh")
+	}
+
+	s.mu.Lock()
+	if _, exists := s.active[cameraID]; exists {
+		s.mu.Unlock()
+		return nil // allaqachon ishlamoqda
+	}
+
+	camDir := filepath.Join(s.previewDir, fmt.Sprintf("%d", cameraID))
+	// Eski fayllar bo'lsa tozalaymiz
+	_ = os.RemoveAll(camDir)
+	if err := os.MkdirAll(camDir, 0o755); err != nil {
+		s.mu.Unlock()
+		return fmt.Errorf("preview papkasini yarata olmadim: %w", err)
+	}
+
+	indexFile := filepath.Join(camDir, "index.m3u8")
+	segPattern := filepath.Join(camDir, "seg_%d.ts")
+
+	// FFmpeg argumentlari — HLS chiqaradi, audio yo'q (yengilroq)
+	args := []string{
+		"-hide_banner", "-loglevel", "warning",
+		"-rtsp_transport", "tcp",
+		"-stimeout", "5000000", // 5s timeout
+		"-i", rtspURL,
+		"-c:v", "copy", // qayta kodlamaslik (CPU kam ishlatadi)
+		"-an",                                  // audio o'chirilgan
+		"-f", "hls",
+		"-hls_time", "2",                       // 2 sek segmentlar
+		"-hls_list_size", "4",                  // m3u8'da maksimum 4 segment
+		"-hls_flags", "delete_segments+omit_endlist+independent_segments",
+		"-hls_segment_type", "mpegts",
+		"-hls_segment_filename", segPattern,
+		indexFile,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := ffmpeg.NewRunner(fmt.Sprintf("preview-%d", cameraID), s.ffmpegBin, args)
+
+	sess := &session{
+		cameraID:  cameraID,
+		runner:    runner,
+		dir:       camDir,
+		startedAt: time.Now(),
+		cancel:    cancel,
+	}
+	s.active[cameraID] = sess
+	s.mu.Unlock()
+
+	if err := runner.Start(ctx); err != nil {
+		s.mu.Lock()
+		delete(s.active, cameraID)
+		s.mu.Unlock()
+		cancel()
+		return fmt.Errorf("ffmpeg ishga tushmadi: %w", err)
+	}
+
+	// Process chiqsa — xaritadan o'chiramiz
+	go func() {
+		<-runner.Done()
+		s.mu.Lock()
+		delete(s.active, cameraID)
+		s.mu.Unlock()
+	}()
+
+	return nil
+}
+
+// Stop — preview'ni to'xtatadi va fayllarni tozalaydi.
+func (s *Service) Stop(cameraID int64) error {
+	s.mu.Lock()
+	sess, ok := s.active[cameraID]
+	if !ok {
+		s.mu.Unlock()
+		return nil // ishlamayapti — bekor qilmaymiz, OK
+	}
+	delete(s.active, cameraID)
+	s.mu.Unlock()
+
+	sess.cancel()
+	_ = sess.runner.Stop(3 * time.Second)
+
+	// Fayllarni tozalash (kechikishimiz mumkin — UI bunga e'tibor bermaydi)
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		_ = os.RemoveAll(sess.dir)
+	}()
+	return nil
+}
+
+// StopAll — barcha preview'larni to'xtatadi (Shutdown uchun).
+func (s *Service) StopAll() {
+	s.mu.RLock()
+	ids := make([]int64, 0, len(s.active))
+	for id := range s.active {
+		ids = append(ids, id)
+	}
+	s.mu.RUnlock()
+	for _, id := range ids {
+		_ = s.Stop(id)
+	}
+}
+
+// IsActive — kamera preview'i ishlayaptimi?
+func (s *Service) IsActive(cameraID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.active[cameraID]
+	return ok
+}
+
+// Handler — `/preview/{cameraID}/...` URL'larni HLS fayllarga yo'naltirilgan http.Handler.
+// Wails' AssetServer.Handler sifatida ishlatiladi.
+type Handler struct {
+	PreviewDir string
+}
+
+// NewHandler — preview fayllarini beruvchi handler.
+func NewHandler(previewDir string) *Handler {
+	return &Handler{PreviewDir: previewDir}
+}
+
+// ServeHTTP — /preview/{id}/...  fayllarni qaytaradi.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// URL shabloni: /preview/{cameraID}/index.m3u8 yoki /preview/{cameraID}/seg_N.ts
+	path := strings.TrimPrefix(r.URL.Path, "/preview/")
+	if path == r.URL.Path || path == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Yo'lda ".." bo'lmasligini ta'minlash (path traversal himoyasi)
+	if strings.Contains(path, "..") {
+		http.Error(w, "noto'g'ri yo'l", http.StatusBadRequest)
+		return
+	}
+
+	fullPath := filepath.Join(h.PreviewDir, filepath.FromSlash(path))
+
+	// MIME type
+	if strings.HasSuffix(path, ".m3u8") {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		// HLS playlist tez-tez yangilanadi — cache'lamaslik
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	} else if strings.HasSuffix(path, ".ts") {
+		w.Header().Set("Content-Type", "video/mp2t")
+		// .ts segmentlari o'zgarmaydi — kanal kesh qila oladi
+		w.Header().Set("Cache-Control", "public, max-age=10")
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	http.ServeFile(w, r, fullPath)
+}
