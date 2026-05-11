@@ -64,3 +64,12 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2a3142; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4356; }
+
+/* Modal animatsiyalar */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-in { animation: fadeIn 0.15s ease-out; }
+.fade-in { animation: fadeIn 0.15s ease-out; }
+.duration-150 { animation-duration: 0.15s; }

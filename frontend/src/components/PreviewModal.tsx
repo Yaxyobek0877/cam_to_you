@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import { X, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { startPreview, stopPreview } from "../lib/api";
+import { useEscapeKey } from "../lib/hooks";
 import type { Camera } from "../lib/types";
 
 /**
@@ -27,6 +28,8 @@ export function PreviewModal({
   const hlsRef = useRef<Hls | null>(null);
   const [state, setState] = useState<"starting" | "loading" | "playing" | "error">("starting");
   const [errorMsg, setErrorMsg] = useState<string>("");
+
+  useEscapeKey(onClose);
 
   // Backend preview'ni boshlash va m3u8 fayli yaratilishini kutish
   useEffect(() => {
@@ -131,21 +134,21 @@ export function PreviewModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+      className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-4xl overflow-hidden"
+        className="bg-bg-card rounded-xl border border-white/10 shadow-2xl w-full max-w-4xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b border-white/5">
-          <div>
-            <h2 className="text-lg font-semibold">{camera.name}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold truncate">{camera.name}</h2>
+            <p className="text-xs text-gray-500 mt-0.5 truncate">
               {camera.vendor} • {camera.host} • {camera.useSubStream ? "sub-stream" : "main stream"}
             </p>
           </div>
-          <button onClick={onClose} className="btn-ghost p-1.5" title="Yopish">
+          <button onClick={onClose} className="btn-ghost p-1.5 flex-shrink-0" title="Yopish (Esc)">
             <X className="w-5 h-5" />
           </button>
         </div>

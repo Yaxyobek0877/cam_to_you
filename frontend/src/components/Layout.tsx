@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { hideWindow, quitApp } from "../lib/api";
 import { cn } from "../lib/utils";
+import iconSvg from "../assets/icon.svg";
 
 const navItems = [
   { to: "/dashboard", label: "Boshqaruv paneli", icon: LayoutDashboard },
@@ -24,10 +25,8 @@ export function Layout() {
       <aside className="w-60 flex-shrink-0 bg-bg-card border-r border-white/5 flex flex-col">
         {/* Logo / Header */}
         <div className="p-5 border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
-              <Radio className="w-5 h-5 text-white" />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <img src={iconSvg} alt="Cam2You" className="w-10 h-10 rounded-lg" />
             <div>
               <h1 className="text-base font-bold leading-tight">Cam2You</h1>
               <p className="text-xs text-gray-500 leading-tight">IP → YouTube</p>

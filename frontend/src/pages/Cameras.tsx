@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Camera as CameraIcon, Edit2, Trash2, Wifi, X, Loader2, CheckCircle2, AlertTriangle, Eye, EyeOff, Play } from "lucide-react";
+import { Plus, Camera as CameraIcon, Edit2, Trash2, Wifi, X, Loader2, CheckCircle2, AlertTriangle, Play } from "lucide-react";
 import {
   listCameras,
   createCamera,
@@ -10,6 +10,8 @@ import {
 } from "../lib/api";
 import type { Camera, ProbeResult } from "../lib/types";
 import { PreviewModal } from "../components/PreviewModal";
+import { PasswordInput } from "../components/PasswordInput";
+import { useEscapeKey } from "../lib/hooks";
 
 const emptyCamera: Partial<Camera> = {
   name: "",
@@ -174,8 +176,9 @@ function CameraFormModal({
   const [form, setForm] = useState<Partial<Camera>>(camera);
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const isNew = !form.id;
+
+  useEscapeKey(onClose);
 
   const saveMut = useMutation({
     mutationFn: async () => {
@@ -206,8 +209,8 @@ function CameraFormModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="card w-full max-w-2xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/85 backdrop-blur flex items-center justify-center p-4 z-50 animate-in fade-in duration-150" onClick={onClose}>
+      <div className="bg-bg-card rounded-xl border border-white/10 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-white/5">
           <h2 className="text-lg font-semibold">
             {isNew ? "Yangi kamera" : "Kamerani tahrirlash"}
@@ -261,24 +264,10 @@ function CameraFormModal({
                 </div>
                 <div>
                   <label className="label">Password</label>
-                  <div className="relative">
-                    <input
-                      className="input pr-10"
-                      type={showPassword ? "text" : "password"}
-                      value={form.password ?? ""}
-                      onChange={update("password")}
-                      autoComplete="new-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-100"
-                      tabIndex={-1}
-                      title={showPassword ? "Yashirish" : "Ko'rsatish"}
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <PasswordInput
+                    value={form.password ?? ""}
+                    onChange={update("password")}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <!-- Lens gradient — outer ring -->
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <!-- Lens interior -->
+    <radialGradient id="lensGrad" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1e40af"/>
+    </radialGradient>
+    <!-- Background -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a2030"/>
+      <stop offset="100%" stop-color="#0f1419"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark rounded background -->
+  <rect width="256" height="256" rx="48" ry="48" fill="url(#bgGrad)"/>
+
+  <!-- Outer lens ring -->
+  <circle cx="128" cy="128" r="88" fill="none" stroke="url(#ringGrad)" stroke-width="10"/>
+
+  <!-- Inner dark gap -->
+  <circle cx="128" cy="128" r="78" fill="#0f1419"/>
+
+  <!-- Inner lens -->
+  <circle cx="128" cy="128" r="62" fill="url(#lensGrad)"/>
+
+  <!-- Lens highlight (small white reflection — gives "lens" look) -->
+  <ellipse cx="108" cy="108" rx="18" ry="12" fill="white" opacity="0.25" transform="rotate(-30 108 108)"/>
+
+  <!-- White play triangle (broadcast icon) -->
+  <path d="M 112 105 L 112 151 L 152 128 Z" fill="white"/>
+
+  <!-- Broadcast waves left -->
+  <path d="M 38 96 Q 24 128 38 160" stroke="#3b82f6" stroke-width="7" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 56 110 Q 46 128 56 146" stroke="#60a5fa" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.55"/>
+
+  <!-- Broadcast waves right -->
+  <path d="M 218 96 Q 232 128 218 160" stroke="#3b82f6" stroke-width="7" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M 200 110 Q 210 128 200 146" stroke="#60a5fa" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.55"/>
+
+  <!-- Recording indicator (red dot top-right) -->
+  <circle cx="195" cy="61" r="11" fill="#ef4444"/>
+  <circle cx="195" cy="61" r="11" fill="none" stroke="white" stroke-width="2" opacity="0.4"/>
+</svg>

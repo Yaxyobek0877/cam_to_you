@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Radio, Edit2, Trash2, X, Loader2, Play, Square, RotateCw,
+  Plus, Radio, Edit2, Trash2, X, Loader2, Play, Square,
 } from "lucide-react";
 import {
   listStreams, createStream, updateStream, deleteStream,
@@ -9,6 +9,8 @@ import {
 } from "../lib/api";
 import { StateBadge } from "./Dashboard";
 import { formatUptime } from "../lib/utils";
+import { PasswordInput } from "../components/PasswordInput";
+import { useEscapeKey } from "../lib/hooks";
 import type { Stream, Layout as LayoutType, Quality, Platform, Encoder, AudioMode } from "../lib/types";
 
 const layoutInfo: Record<LayoutType, { label: string; needs: number; preview: string }> = {
@@ -189,6 +191,8 @@ function StreamFormModal({
   const [form, setForm] = useState<Partial<Stream>>(stream);
   const isNew = !form.id;
 
+  useEscapeKey(onClose);
+
   const saveMut = useMutation({
     mutationFn: async () => {
       if (isNew) return createStream(form);
@@ -209,8 +213,8 @@ function StreamFormModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <div className="card w-full max-w-3xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/85 backdrop-blur flex items-center justify-center p-4 z-50 animate-in fade-in duration-150" onClick={onClose}>
+      <div className="bg-bg-card rounded-xl border border-white/10 shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-white/5">
           <h2 className="text-lg font-semibold">{isNew ? "Yangi stream" : "Stream'ni tahrirlash"}</h2>
           <button onClick={onClose} className="btn-ghost p-1"><X className="w-5 h-5" /></button>
@@ -353,8 +357,8 @@ function StreamFormModal({
           {form.platform === "custom" ? (
             <div>
               <label className="label">RTMP URL (stream key bilan)</label>
-              <input
-                className="input font-mono text-xs"
+              <PasswordInput
+                monospace
                 placeholder="rtmp://server/app/STREAM_KEY"
                 value={form.customUrl ?? ""}
                 onChange={(e) => setForm({ ...form, customUrl: e.target.value })}
@@ -363,12 +367,15 @@ function StreamFormModal({
           ) : (
             <div>
               <label className="label">Stream Key</label>
-              <input
-                className="input font-mono text-xs"
+              <PasswordInput
+                monospace
                 placeholder="xxxx-xxxx-xxxx-xxxx"
                 value={form.streamKey ?? ""}
                 onChange={(e) => setForm({ ...form, streamKey: e.target.value })}
               />
+              <p className="text-xs text-gray-500 mt-1.5">
+                💡 YouTube Studio → Go Live → Stream key'dan nusxalang
+              </p>
             </div>
           )}
 
