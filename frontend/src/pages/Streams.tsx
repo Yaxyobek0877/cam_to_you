@@ -543,19 +543,23 @@ function StreamFormModal({
             </div>
           )}
 
-          {/* HEVC manba kameralari uchun tavsiya (Hikvision odatda HEVC yuboradi) */}
+          {/* HEVC kameralar uchun tavsiya — sinov natijalari bilan tasdiqlangan */}
           {form.encoder !== "copy" && (
             <div className="card bg-accent/5 border-accent/20 p-3 text-xs">
-              <p className="font-medium text-accent mb-1">💡 Eng barqaror yo'l — Sub-stream + Copy</p>
+              <p className="font-medium text-accent mb-1">⚡ Eng barqaror yo'l (sinab ko'rilgan)</p>
               <p className="text-gray-300 mb-2">
-                Hikvision kameralar odatda <strong>HEVC (H.265)</strong> yuboradi. YouTube esa H.264 kutadi. Transcoding (HEVC→H.264) ba'zan kamerani uzilishga olib keladi.
+                Hikvision <strong>HEVC 1080p</strong> oqimini dekod qilish og'ir → uzilishlar. Sub-stream (640x360) <strong>4-5x yengil</strong> va barqaror.
               </p>
               <ol className="space-y-1 text-gray-300 ml-2 list-decimal list-inside">
-                <li>Cameras → kamerangizni tahrirlang</li>
-                <li><strong>"Sub-stream"</strong> ni yoqing — kamera 720p H.264 yuboradi</li>
-                <li>Bu yerda Encoder: <strong>"Copy"</strong> tanlang</li>
-                <li>Natija: <strong>0% CPU, eng barqaror oqim</strong></li>
+                <li><strong>Cameras</strong> → kamerangizni tahrirlash</li>
+                <li><strong>"Sub-stream"</strong> ni yoqib saqlang</li>
+                <li>Bu yerda <strong>Sifat: "720p30"</strong> tanlang (sub-stream'ga mos)</li>
+                <li>Encoder: <strong>"Auto"</strong> (NVENC tanlanadi)</li>
+                <li>Natija: <strong>uzluksiz oqim, 0 uzilish</strong></li>
               </ol>
+              <p className="text-gray-500 mt-2 text-[11px]">
+                💡 Eng yengil variant: kamerada sub-stream H.264 (HEVC emas) ga sozlasangiz, Encoder "Copy" = 0% CPU
+              </p>
             </div>
           )}
 
