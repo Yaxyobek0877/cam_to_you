@@ -152,6 +152,22 @@ func Build(cfg StreamConfig) ([]string, error) {
 		args = append(args, "-i", cam.RTSPURL)
 	}
 
+	// 2b) JIM AUDIO INPUT (oxirida — index = needed)
+	//
+	// MUHIM kuzatuv (v0.1.22): Hikvision sub-stream'da audio yo'q. Kamera audio'siz
+	// FFmpeg "video-only" stream yuboradi. YouTube RTMP packetlarni QABUL QILADI,
+	// LEKIN broadcast'ni TAN OLMAYDI — YouTube live broadcast'da audio MAJBURIY.
+	// Test pattern bilan (sine audio + libopenh264) YouTube ko'rsatadi.
+	// Real kamera bilan (audio yo'q) YouTube hech qachon ko'rsatmaydi.
+	//
+	// YECHIM: lavfi anullsrc bilan jim AAC stereo audio yaratamiz. Bu kamera
+	// ovozini bermaydi (kamera'da o'sha bo'lsa ham), lekin YouTube qabul qiladi.
+	// Kelajakda: cfg.Audio.Mode == "index" → o'sha kameradan audio (probe kerak).
+	args = append(args,
+		"-f", "lavfi",
+		"-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+	)
+
 	// 3) Layout'ga qarab filter va map argumentlari
 	if cfg.Layout == LayoutSingle {
 		args = append(args, buildSingleArgs(cfg)...)
@@ -445,29 +461,29 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 //   - 128-160 kbps
 //
 // Hikvision PCM mu-law 8kHz mono → AAC 44.1kHz stereo 128k.
+//
+// v0.1.22 dan: Build() kamera input'laridan KEYIN anullsrc (jim audio) input
+// qo'shadi. Demak anullsrc'ning input indexi = len(Cameras). Audio mapping
+// shu indexga ishora qiladi:
+//
+//	"muted"   → -an (audio umuman yo'q — YouTube buni qabul qilmaydi, ehtiyot bo'l)
+//	"first"   → AVVAL kamera 0 audio, AKS HOLDA anullsrc (probe kerak; hozir anullsrc)
+//	"index"   → tanlangan kamera audio, AKS HOLDA anullsrc
+//
+// Probe yo'qligi sababli "first" va "index" hozir DOIM anullsrc'ni ishlatadi
+// (kamera audio'sini ishlatmaydi). Kelajakda probe qo'shilsa, kamera audio
+// mavjud bo'lsa shundan ishlatiladi.
 func buildAudioArgs(cfg StreamConfig) []string {
-	switch cfg.Audio.Mode {
-	case "muted":
-		return []string{"-an"} // -an = audio yo'q
-	case "index":
-		idx := cfg.Audio.CameraSource
-		if idx < 0 || idx >= len(cfg.Cameras) {
-			idx = 0
-		}
-		return []string{
-			"-map", fmt.Sprintf("%d:a?", idx),
-			"-c:a", "aac",
-			"-b:a", "128k",
-			"-ar", "44100",
-			"-ac", "2", // YouTube uchun stereo majburiy
-		}
-	default: // "first" yoki bo'sh
-		return []string{
-			"-map", "0:a?",
-			"-c:a", "aac",
-			"-b:a", "128k",
-			"-ar", "44100",
-			"-ac", "2", // mono → stereo upmix
-		}
+	if cfg.Audio.Mode == "muted" {
+		return []string{"-an"}
+	}
+	// anullsrc indexi = kameralar sonidan keyin (oxirgi input)
+	silentIdx := len(cfg.Cameras)
+	return []string{
+		"-map", fmt.Sprintf("%d:a", silentIdx),
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-ar", "44100",
+		"-ac", "2",
 	}
 }
