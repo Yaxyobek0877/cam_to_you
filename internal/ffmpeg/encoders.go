@@ -91,6 +91,7 @@ func detect(ffmpegBin string) DetectedEncoders {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, ffmpegBin, "-hide_banner", "-encoders")
+	hideConsoleWindow(cmd) // CMD oynasi ochilmasin
 	out, err := cmd.Output()
 	if err != nil {
 		return d

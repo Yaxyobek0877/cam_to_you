@@ -20,17 +20,16 @@ func New(appID string) *Notifier {
 }
 
 // Notify — oddiy toast yuboradi.
+// Action tugmasi yo'q — chunki action'lar Windows shell'da kutilmagan xatti-harakat
+// chiqarishi mumkin (masalan, ro'yxatdan o'tmagan protokol uchun File Explorer ochish).
 func (n *Notifier) Notify(title, message string) error {
 	if !n.Enabled {
 		return nil
 	}
 	t := toast.Notification{
-		AppID:   n.AppID,
-		Title:   title,
-		Body:    message,
-		Actions: []toast.Action{
-			{Content: "Ochish", Arguments: "open"},
-		},
+		AppID: n.AppID,
+		Title: title,
+		Body:  message,
 	}
 	return t.Push()
 }

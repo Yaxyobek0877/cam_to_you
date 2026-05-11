@@ -146,7 +146,8 @@ func (s *Service) Start(cameraID int64, rtspURL string) error {
 	}
 
 	args := []string{
-		"-hide_banner", "-loglevel", "warning",
+		"-hide_banner",
+		"-loglevel", "info", // info darajada — connection holatini ko'rish uchun
 		"-rtsp_transport", "tcp",
 		"-i", rtspURL,
 
@@ -249,12 +250,9 @@ func (s *Service) watchReady(cameraID int64, camDir string) {
 }
 
 // forwardLogs — FFmpeg loglarini preview hodisalariga aylantiradi.
+// Preview uchun HAMMA log darajalarini yuboramiz — foydalanuvchi nima bo'layotganini ko'rishi kerak.
 func (s *Service) forwardLogs(cameraID int64, logCh <-chan ffmpeg.LogLine) {
 	for ll := range logCh {
-		// info darajadagi loglarni o'tkazib yuboramiz (juda ko'p)
-		if ll.Level == ffmpeg.LogInfo {
-			continue
-		}
 		s.emit(Event{
 			Type:     EventLog,
 			CameraID: cameraID,

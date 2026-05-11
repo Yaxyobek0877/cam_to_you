@@ -162,6 +162,7 @@ func (r *Runner) Start(ctx context.Context) error {
 	r.mu.Unlock()
 
 	cmd := exec.CommandContext(ctx, r.BinPath, r.Args...)
+	hideConsoleWindow(cmd) // Windows'da CMD oynasini ochmaslik
 
 	// Stdin'ga ulanamiz — keyinroq 'q' yuborish uchun (graceful stop)
 	stdin, err := cmd.StdinPipe()

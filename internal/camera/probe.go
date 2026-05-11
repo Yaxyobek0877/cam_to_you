@@ -58,6 +58,7 @@ func (p *Prober) Probe(ctx context.Context, rtspURL string) (*ProbeResult, error
 		"-print_format", "json",
 		rtspURL,
 	)
+	hideConsoleWindow(cmd) // Windows'da CMD oynasi ochilmasin
 
 	out, err := cmd.Output()
 	if err != nil {

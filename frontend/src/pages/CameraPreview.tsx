@@ -57,7 +57,7 @@ export function CameraPreview() {
   useEffect(() => {
     if (isNaN(cameraId)) return;
     let mounted = true;
-    let firstSegmentTimer: ReturnType<typeof setTimeout> | null = null;
+    let hlsStarted = false;
 
     // Preview hodisalarini eshitamiz
     const unsub = onPreviewEvent((data: any) => {
@@ -70,9 +70,11 @@ export function CameraPreview() {
           appendLog("info", `Preview ishga tushdi (encoder: ${data.payload?.encoder})`);
           break;
         case "ready":
-          appendLog("info", "Birinchi video segment yaratildi — player ulanmoqda");
-          // ready bo'lsa, hls.js'ga qayta urinish signal beramiz
-          if (state !== "playing") setupHls();
+          appendLog("info", "✓ Birinchi video segment tayyor — player ulanmoqda");
+          if (!hlsStarted) {
+            hlsStarted = true;
+            setupHls();
+          }
           break;
         case "log":
           appendLog(
@@ -92,7 +94,8 @@ export function CameraPreview() {
       }
     });
 
-    // Boshlash
+    // Boshlash — fixed timer YO'Q, biz backend'dan "ready" event'ni kutamiz.
+    // Bu kameraga ulanish vaqti har xil bo'lganda yaxshiroq ishlaydi.
     (async () => {
       try {
         setState("starting");
@@ -100,11 +103,7 @@ export function CameraPreview() {
         await startPreview(cameraId);
         if (!mounted) return;
         setState("loading");
-
-        // Birinchi segment yaratilishini kutamiz (2s)
-        firstSegmentTimer = setTimeout(() => {
-          if (mounted) setupHls();
-        }, 1500);
+        appendLog("info", "FFmpeg ishlayotgani kutilmoqda...");
       } catch (err) {
         if (mounted) {
           const msg = String(err);
@@ -117,7 +116,6 @@ export function CameraPreview() {
 
     return () => {
       mounted = false;
-      if (firstSegmentTimer) clearTimeout(firstSegmentTimer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

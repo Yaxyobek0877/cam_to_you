@@ -1,36 +1,30 @@
-feat(v0.1.3): full-page preview + Logs page + diagnostic info
+fix(v0.1.4): hide CMD windows + wait for ready event + verbose FFmpeg logs
 
-UX overhaul: navigation instead of modals
+CRITICAL: Hide subprocess console windows (no more black CMD popups)
+- New internal/ffmpeg/noconsole_windows.go: SysProcAttr with HideWindow + CREATE_NO_WINDOW
+- New internal/camera/noconsole_windows.go: same for ffprobe
+- Applied to all exec.Cmd calls:
+  - ffmpeg.Runner (preview/streaming subprocess)
+  - ffmpeg.Installer.VerifyVersion
+  - ffmpeg.DetectEncoders
+  - camera.Prober.Probe (ffprobe)
+- Cross-platform: noconsole_other.go for Linux/macOS (no-op)
 
-PREVIEW (was modal, now full page):
-- New route: /cameras/:id/preview
-- Camera click "Jonli korish" navigates to dedicated page
-- Full-page video player with controls
-- Real-time FFmpeg log feed at bottom (collapsible)
-- Diagnostic panel: encoder used, masked RTSP URL, state, log count
-- Manual retry button + Escape to go back
-- RTSP credentials masked in logs (security)
+PREVIEW: fix manifestLoadError race condition
+- Was: fixed 1.5s timer before hls.js setup (too short for slow cameras)
+- Now: wait for backend "ready" event (when m3u8 actually exists)
+- hls.js only starts loading once we know file is ready
+- Reliable for any camera connection speed
 
-LOGS PAGE (new):
-- New route: /logs + sidebar entry
-- Real-time stream + preview + ffmpeg event feed
-- Filter by source (stream/preview/ffmpeg/system)
-- Filter by level (info/warning/error)
-- Pause/resume, auto-scroll toggle, clear
-- Global event store (ringbuffer, last 1000 entries)
-- Survives navigation between pages
+PREVIEW: verbose FFmpeg logs
+- preview.go: loglevel raised from "warning" to "info"
+- Stops filtering out info-level logs in forwardLogs
+- User now sees FFmpeg connection progress, codec info, etc.
+- Especially helpful during loading state
 
-BACKEND - preview events:
-- internal/preview/preview.go: full event system
-  - EventStarting (with encoder info)
-  - EventReady (when first segment ready)
-  - EventLog (forwarded FFmpeg logs)
-  - EventError, EventStopped
-- Background goroutine watches index.m3u8 creation
-- Logs go to UI via Wails event bus
-
-FIX: builder.go was using -rw_timeout for ffmpeg
-- That option only works for ffprobe, not ffmpeg
-- Removed (relies on TCP defaults + Go context)
+TOAST: remove action buttons
+- "Ochish" action was triggering Windows shell behavior
+- Could explain mysterious File Explorer popups
+- Removed Actions array — plain notifications only
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

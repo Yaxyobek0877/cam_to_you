@@ -104,6 +104,7 @@ func (i *Installer) VerifyVersion(ctx context.Context) (string, error) {
 		return "", errors.New("ffmpeg topilmadi")
 	}
 	cmd := exec.CommandContext(ctx, bin, "-version")
+	hideConsoleWindow(cmd) // CMD oynasi ochilmasin
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("ffmpeg -version xatoligi: %w", err)
