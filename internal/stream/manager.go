@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -281,9 +282,15 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 
 		m.emit(Event{Type: EventRestart, StreamID: sr.stream.ID, Payload: sr.restartCount})
 
-		// Restart delay: birinchi 10 marta — juda qisqa (1s), keyin exponential backoff
-		// Kamera sessiya cheklovlari uchun tez restart — YouTube broadcast'ni saqlab qoladi.
-		baseDelay := 1 * time.Second
+		// Restart delay strategiyasi:
+		//   - 1-urinish: 3 sek (kamera RTSP sessiyani bo'shatishi uchun MAJBURIY)
+		//   - 2-10: 3 sek qatorida
+		//   - 11+: exponential backoff (3 → 6 → 12 → ... → 5 min)
+		//
+		// MUHIM: Hikvision kameralar oldingi sessiyani 2-3 sek davomida tutib turadi.
+		// Darrov qayta urinishi yangi sessiya emas, eski qoldiqni urgan kabi —
+		// kamera ham yangi ulanishni yopib qo'yadi. 3 sek minimum.
+		baseDelay := 3 * time.Second
 		delay := baseDelay
 		if sr.restartCount > 10 {
 			// 11-urinishdan boshlab exponential — muammo doimiy bo'lsa
@@ -308,6 +315,9 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 // emitExitReason — FFmpeg chiqqanidan keyin oxirgi 8 ta log qatorini UI'ga yuboradi.
 // Foydalanuvchi nima sababdan stream uzilganini ko'rishi uchun MUHIM —
 // runner.lastErr toza chiqishda bo'sh qoladi va sabab yashirinib qoladi.
+//
+// Bonus: log'larda mashhur xato patternlarini aniqlab, foydalanuvchiga
+// aniq tavsiya beradi (masalan, RTSP EOF → kamera sessiya cheklovi tavsiyasi).
 func (m *Manager) emitExitReason(streamID int64, runner *ffmpeg.Runner) {
 	logs := runner.RecentLogs()
 	if len(logs) == 0 {
@@ -320,14 +330,20 @@ func (m *Manager) emitExitReason(streamID int64, runner *ffmpeg.Runner) {
 		start = 0
 	}
 	lines := make([]map[string]interface{}, 0, len(logs)-start)
+	allText := ""
 	for i := start; i < len(logs); i++ {
 		lines = append(lines, map[string]interface{}{
 			"time":    logs[i].Time.Format(time.RFC3339),
 			"level":   string(logs[i].Level),
 			"message": logs[i].Message,
 		})
+		allText += logs[i].Message + "\n"
 	}
 	exitCode := runner.ExitCode()
+
+	// Mashhur xato patternlarini aniqlash — foydalanuvchiga aniq tavsiya beradi
+	hint := detectExitHint(allText, exitCode)
+
 	m.emit(Event{
 		Type:     EventExitReason,
 		StreamID: streamID,
@@ -335,8 +351,46 @@ func (m *Manager) emitExitReason(streamID int64, runner *ffmpeg.Runner) {
 			"exitCode": exitCode,
 			"state":    string(runner.State()),
 			"lines":    lines,
+			"hint":     hint, // Foydalanuvchi uchun tushunarli sabab+yechim
 		},
 	})
+}
+
+// detectExitHint — log matnida mashhur xato patternlarini topib,
+// foydalanuvchiga ona tilida aniq tavsiya beradi.
+func detectExitHint(logText string, exitCode int) string {
+	lower := strings.ToLower(logText)
+	switch {
+	case strings.Contains(lower, "failed reading rtsp data: end of file"),
+		strings.Contains(lower, "rtsp: end of file"):
+		return "🎥 Kamera RTSP sessiyani yopdi (EOF). Bu odatda Hikvision sessiya " +
+			"cheklovi. YECHIM: kamera web UI → Configuration → Video/Audio → " +
+			"Sub Stream → Video Encoding'ni H.264 ga o'zgartiring (H.265 dan). " +
+			"Keyin Cam2You'da Encoder = Copy tanlang."
+	case strings.Contains(lower, "401 unauthorized"),
+		strings.Contains(lower, "authentication failed"):
+		return "🔐 RTSP autentifikatsiya muvaffaqiyatsiz. Kamera login/parolini tekshiring."
+	case strings.Contains(lower, "connection refused"):
+		return "🌐 Kameraga ulanib bo'lmadi. IP-manzil va port to'g'rimi tekshiring."
+	case strings.Contains(lower, "connection reset by peer"):
+		return "🔌 Tarmoq ulanishi uzildi. Wi-Fi/LAN holatini tekshiring."
+	case strings.Contains(lower, "i/o error"),
+		strings.Contains(lower, "error opening output"):
+		return "📡 RTMP push muvaffaqiyatsiz. Stream key noto'g'ri yoki YouTube'da broadcast yoqilmagan."
+	case strings.Contains(lower, "no such file or directory"):
+		return "📁 FFmpeg yo'li yoki kamera URL'i noto'g'ri."
+	case strings.Contains(lower, "broken pipe"):
+		return "💔 RTMP serveri ulanishni yopdi. YouTube boshqa joydan stream qabul qilayotgan bo'lishi mumkin."
+	case strings.Contains(lower, "nvenc"):
+		if strings.Contains(lower, "session limit") || strings.Contains(lower, "max sessions") {
+			return "🎮 NVIDIA NVENC sessiya cheklovi. Boshqa stream/yozuvni yoping yoki Encoder = Copy ishlating."
+		}
+	}
+	if exitCode == 0 {
+		return "ℹ️ FFmpeg toza chiqdi (exit=0). Odatda kamera RTSP sessiyani yopgan. " +
+			"Agar 10+ urinishdan keyin ham davom etsa, kamera sozlamalarini tekshiring."
+	}
+	return ""
 }
 
 // forwardLogs — FFmpeg log'larini Manager hodisalariga aylantiradi.

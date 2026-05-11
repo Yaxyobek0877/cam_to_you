@@ -135,6 +135,25 @@ func Build(cfg StreamConfig) ([]string, error) {
 		if cam.UseTCP {
 			args = append(args, "-rtsp_transport", "tcp")
 		}
+
+		// RTSP stabillik bayroqlari — Hikvision sessiya cheklovlariga qarshi:
+		//   -stimeout 10s         : RTSP socket timeout (mikrosekundlarda) — agar ulanish
+		//                            10s ichida javob bermasa, FFmpeg uziladi (cheksiz kutish o'rniga)
+		//   -rw_timeout 10s       : read/write timeout — bir xil maqsad
+		//   -reorder_queue_size 0 : RTSP paket buferi — kichikroq qilib, kameraga
+		//                            sessiyani aktiv tutib turish signali yuboramiz
+		//   -fflags +nobuffer+discardcorrupt : darrov o'qish, buzuq paketlarni tashlash
+		//   -probesize 32         : kichik probe — birinchi frame'larni tezroq o'qish
+		//   -analyzeduration 1M   : qisqa analiz — ulanishni tez ishga tushirish
+		args = append(args,
+			"-stimeout", "10000000",
+			"-rw_timeout", "10000000",
+			"-reorder_queue_size", "0",
+			"-fflags", "+nobuffer+discardcorrupt",
+			"-probesize", "32",
+			"-analyzeduration", "1000000",
+		)
+
 		args = append(args, "-i", cam.RTSPURL)
 	}
 

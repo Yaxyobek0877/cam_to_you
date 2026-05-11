@@ -96,6 +96,7 @@ export function initEventStore() {
         // FFmpeg chiqqanida oxirgi 8 qator — clean exit'da ham sababini ko'rsatadi
         const p = ev.payload || {};
         const exitCode = p.exitCode ?? "?";
+        const hint: string = p.hint || "";
         const lines: Array<{ message: string; level?: string }> = p.lines || [];
         level = exitCode === 0 ? "warning" : "error";
         // Birinchi qator — qisqa summary
@@ -109,6 +110,18 @@ export function initEventStore() {
           message: summary,
           raw: ev,
         });
+        // Agar aniq tavsiya topilgan bo'lsa, uni alohida kuchli (warning) qatorda ko'rsatamiz
+        if (hint) {
+          add({
+            time: new Date(),
+            source: "stream",
+            sourceId: ev.streamId,
+            level: "warning",
+            type: "exit_hint",
+            message: hint,
+            raw: { hint },
+          });
+        }
         // Har bir log qatorini alohida entry qilib qo'shamiz — UI'da yaxshi ko'rinadi
         for (const ln of lines) {
           const lnLevel: LogLevel =
