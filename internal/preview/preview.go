@@ -84,22 +84,37 @@ func (s *Service) Start(cameraID int64, rtspURL string) error {
 	indexFile := filepath.Join(camDir, "index.m3u8")
 	segPattern := filepath.Join(camDir, "seg_%d.ts")
 
-	// FFmpeg argumentlari — HLS chiqaradi, audio yo'q (yengilroq)
+	// Encoder aniqlanadi — har xil FFmpeg buildlar har xil encoderlarga ega.
+	// Hikvision odatda HEVC (H.265) yuboradi, WebView2 hls.js HEVC'ni
+	// o'qiy olmaydi — har doim H.264'ga transcode qilamiz.
+	encs := ffmpeg.DetectEncoders(s.ffmpegBin)
+	enc := encs.BestH264()
+	if enc == "" {
+		s.mu.Unlock()
+		return errors.New("hech qanday H.264 encoder topilmadi (FFmpeg buildni qayta o'rnating)")
+	}
+
 	args := []string{
 		"-hide_banner", "-loglevel", "warning",
 		"-rtsp_transport", "tcp",
-		"-stimeout", "5000000", // 5s timeout
 		"-i", rtspURL,
-		"-c:v", "copy", // qayta kodlamaslik (CPU kam ishlatadi)
-		"-an",                                  // audio o'chirilgan
+
+		// Video — encoder dinamik tanlanadi
+		"-c:v", enc,
+	}
+	args = append(args, previewEncoderArgs(enc)...)
+	args = append(args,
+		"-vf", "scale=-2:720", // 720p preview uchun yetarli
+		"-an", // audio o'chirilgan
+		"-pix_fmt", "yuv420p",
 		"-f", "hls",
-		"-hls_time", "2",                       // 2 sek segmentlar
-		"-hls_list_size", "4",                  // m3u8'da maksimum 4 segment
+		"-hls_time", "2",
+		"-hls_list_size", "4",
 		"-hls_flags", "delete_segments+omit_endlist+independent_segments",
 		"-hls_segment_type", "mpegts",
 		"-hls_segment_filename", segPattern,
 		indexFile,
-	}
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	runner := ffmpeg.NewRunner(fmt.Sprintf("preview-%d", cameraID), s.ffmpegBin, args)
@@ -174,6 +189,65 @@ func (s *Service) IsActive(cameraID int64) bool {
 	defer s.mu.RUnlock()
 	_, ok := s.active[cameraID]
 	return ok
+}
+
+// previewEncoderArgs — encoder turiga qarab tegishli sozlamalar.
+// Preview uchun maksimal tezlik, minimal sifat (720p yetarli).
+func previewEncoderArgs(encoder string) []string {
+	switch encoder {
+	case "h264_nvenc":
+		return []string{
+			"-preset", "p1", // p1=eng tez (NVENC)
+			"-tune", "ull", // ultra low latency
+			"-rc", "cbr",
+			"-b:v", "1500k",
+			"-maxrate", "1800k",
+			"-bufsize", "3000k",
+			"-g", "50",
+			"-profile:v", "baseline",
+		}
+	case "h264_qsv":
+		return []string{
+			"-preset", "veryfast",
+			"-b:v", "1500k",
+			"-maxrate", "1800k",
+			"-bufsize", "3000k",
+			"-g", "50",
+			"-profile:v", "baseline",
+		}
+	case "h264_amf":
+		return []string{
+			"-quality", "speed",
+			"-b:v", "1500k",
+			"-maxrate", "1800k",
+			"-bufsize", "3000k",
+			"-g", "50",
+			"-profile:v", "baseline",
+		}
+	case "libx264":
+		return []string{
+			"-preset", "ultrafast",
+			"-tune", "zerolatency",
+			"-b:v", "1500k",
+			"-maxrate", "1800k",
+			"-bufsize", "3000k",
+			"-g", "50",
+			"-profile:v", "baseline",
+			"-level", "3.1",
+		}
+	case "libopenh264":
+		return []string{
+			"-b:v", "1500k",
+			"-g", "50",
+			"-profile:v", "baseline",
+		}
+	case "h264_mf":
+		return []string{
+			"-b:v", "1500k",
+			"-g", "50",
+		}
+	}
+	return []string{"-b:v", "1500k", "-g", "50"}
 }
 
 // Handler — `/preview/{cameraID}/...` URL'larni HLS fayllarga yo'naltirilgan http.Handler.

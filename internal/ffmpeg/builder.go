@@ -22,11 +22,13 @@ import (
 type Encoder string
 
 const (
-	EncoderAuto      Encoder = "auto"       // mavjudligiga qarab eng tez variantni tanlaydi
-	EncoderNVENC     Encoder = "h264_nvenc" // NVIDIA GPU
-	EncoderQuickSync Encoder = "h264_qsv"   // Intel GPU
-	EncoderX264      Encoder = "libx264"    // CPU
-	EncoderCopy      Encoder = "copy"       // qayta kodlamaslik (faqat single uchun)
+	EncoderAuto      Encoder = "auto"        // mavjudligiga qarab eng tez variantni tanlaydi
+	EncoderNVENC     Encoder = "h264_nvenc"  // NVIDIA GPU
+	EncoderQuickSync Encoder = "h264_qsv"    // Intel GPU
+	EncoderAMF       Encoder = "h264_amf"    // AMD GPU
+	EncoderX264      Encoder = "libx264"     // CPU (GPL)
+	EncoderOpenH264  Encoder = "libopenh264" // CPU (LGPL fallback)
+	EncoderCopy      Encoder = "copy"        // qayta kodlamaslik (faqat single uchun)
 )
 
 // Layout — bir nechta kamerani bitta stream'da joylashtirish.
@@ -120,8 +122,9 @@ func Build(cfg StreamConfig) ([]string, error) {
 		if cam.UseTCP {
 			args = append(args, "-rtsp_transport", "tcp")
 		}
-		// Qisqa zaif ulanishlar uchun timeout
-		args = append(args, "-stimeout", "5000000") // 5 sekund mikrosekundlarda
+		// Qisqa zaif ulanishlar uchun timeout — yangi ffmpeg'da -stimeout o'rniga -rw_timeout
+		// (eski versiyada -stimeout, FFmpeg 7+ versiyada olib tashlandi)
+		args = append(args, "-rw_timeout", "10000000") // 10 sekund mikrosekundlarda
 		args = append(args, "-i", cam.RTSPURL)
 	}
 
@@ -262,6 +265,25 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
 			"-g", strconv.Itoa(cfg.FPS*2),
 			"-pix_fmt", "yuv420p", // YouTube'ga mos
+		)
+	case EncoderOpenH264:
+		// LGPL FFmpeg build'lar uchun fallback CPU encoder
+		args = append(args,
+			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
+			"-g", strconv.Itoa(cfg.FPS*2),
+			"-profile:v", "main",
+			"-pix_fmt", "yuv420p",
+		)
+	case EncoderAMF:
+		// AMD GPU
+		args = append(args,
+			"-quality", "speed",
+			"-rc", "cbr",
+			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
+			"-maxrate", strconv.Itoa(cfg.BitrateKbps)+"k",
+			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
+			"-g", strconv.Itoa(cfg.FPS*2),
+			"-pix_fmt", "yuv420p",
 		)
 	}
 

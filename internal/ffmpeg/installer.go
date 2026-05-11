@@ -28,13 +28,13 @@ import (
 // mirrors — Windows x64 uchun FFmpeg yuklash manbalari.
 // Tartib muhim: birinchisi sinab ko'riladi, ishlamasa keyingisiga o'tadi.
 //
-// Manbalar haqida:
-//   - GitHub BtbN — GitHub CDN, dunyo bo'ylab tez (~150MB, GPL bilan to'liq)
-//   - gyan.dev    — ixcham essentials build (~80MB), lekin server o'rta tezlikda
+// MUHIM: GPL build'ni ishlatamiz, chunki LGPL build'da libx264 yo'q.
+// libx264 — CPU H.264 encoder, GPU bo'lmaganlar uchun zarur.
+// gyan.dev "essentials" build'i ham GPL bilan keladi (libx264 ichida).
 var mirrors = []mirror{
 	{
-		Name: "GitHub (BtbN) — tez CDN",
-		URL:  "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl.zip",
+		Name: "GitHub (BtbN GPL) — tez CDN",
+		URL:  "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
 	},
 	{
 		Name: "gyan.dev — ixcham build",

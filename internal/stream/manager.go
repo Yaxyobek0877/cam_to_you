@@ -141,6 +141,15 @@ func (m *Manager) Start(ctx context.Context, streamID int64) error {
 
 	// FFmpeg konfiguratsiyasini quramiz
 	cfg := buildFFmpegConfig(st, cams)
+
+	// Encoder'ni resolve qilamiz (auto → mavjud GPU, yoki fallback)
+	encs := ffmpeg.DetectEncoders(m.ffmpegBin)
+	resolvedEnc, err := ffmpeg.ResolveEncoder(cfg.Encoder, encs)
+	if err != nil {
+		return fmt.Errorf("encoder topib bo'lmadi: %w", err)
+	}
+	cfg.Encoder = resolvedEnc
+
 	args, err := ffmpeg.Build(cfg)
 	if err != nil {
 		return fmt.Errorf("ffmpeg buyruq qurib bo'lmadi: %w", err)

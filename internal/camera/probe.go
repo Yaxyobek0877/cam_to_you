@@ -52,7 +52,8 @@ func (p *Prober) Probe(ctx context.Context, rtspURL string) (*ProbeResult, error
 		"-hide_banner",
 		"-loglevel", "error",
 		"-rtsp_transport", "tcp",
-		"-stimeout", "5000000", // 5 sekund
+		// FFmpeg 7+'da -stimeout olib tashlangan, -rw_timeout ishlatamiz
+		"-rw_timeout", "5000000", // 5 sekund
 		"-show_streams",
 		"-print_format", "json",
 		rtspURL,
