@@ -43,7 +43,7 @@ func TestRealStreamCommand(t *testing.T) {
 	err = db.QueryRow(`SELECT id, name, layout, camera_ids, quality, encoder,
 		audio_mode, audio_camera_index, platform, stream_key, custom_url,
 		auto_restart, max_restarts, restart_delay_ms, created_at, updated_at
-		FROM streams WHERE id=1`).Scan(
+		FROM streams ORDER BY id LIMIT 1`).Scan(
 		&st.ID, &st.Name, &layoutStr, &camIDsJSON, &qualityStr, &encStr,
 		&st.AudioMode, &st.AudioCameraIndex, &platformStr, &st.StreamKey, &st.CustomURL,
 		&autoRestart, &st.MaxRestarts, &st.RestartDelayMs, &createdAt, &updatedAt)
@@ -62,7 +62,7 @@ func TestRealStreamCommand(t *testing.T) {
 	var useSub int
 	var camCreated, camUpdated string
 	err = db.QueryRow(`SELECT id, name, vendor, host, port, username, password,
-		channel, use_sub_stream, raw_rtsp_url, created_at, updated_at FROM cameras WHERE id=1`).Scan(
+		channel, use_sub_stream, raw_rtsp_url, created_at, updated_at FROM cameras ORDER BY id LIMIT 1`).Scan(
 		&c.ID, &c.Name, &c.Vendor, &c.Host, &c.Port, &c.Username, &c.Password,
 		&c.Channel, &useSub, &c.RawRTSPURL, &camCreated, &camUpdated)
 	if err != nil { t.Fatalf("camera: %v", err) }

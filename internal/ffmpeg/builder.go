@@ -199,10 +199,28 @@ func buildSingleArgs(cfg StreamConfig) []string {
 		args = append(args, "-c:v", "copy")
 		return args
 	}
-	// NVENC + CUDA hardware path bilan -vf format conflict. Faqat CPU
-	// encoderlarda format konvertatsiyasi.
+	// CPU encoderlarda — sozlangan W:H ga scale qilamiz + yuv420p format.
+	// Bu ZARUR: aks holda kamera sub-stream 640x360 chiqsa, output ham 640x360
+	// bo'ladi (foydalanuvchi 1080p tanlagan bo'lsa ham). YouTube past sifat ko'rsatadi.
+	//
+	// `force_original_aspect_ratio=decrease` — agar manba aspect ratio farq qilsa,
+	// chetga qora qora chiziqlar emas, balki passdek-fitiziya saqlab kichiklashtirish.
+	// `pad` — qoldiq pikselni qora bilan to'ldirish (chetlari toza ko'rinadi).
+	//
+	// NVENC esa CUDA hardware path bilan ishlaydi — scale_cuda foydalanish kerak,
+	// lekin hozircha NVENC'da scaling qilmaymiz (kamera sub-stream odatda kerakli
+	// resolution'da bo'ladi). Yangilash kerak bo'lganda alohida fix.
 	if cfg.Encoder != EncoderNVENC {
-		args = append(args, "-vf", "format=yuv420p")
+		// `scale=W:H:in_range=full:out_range=tv` — Hikvision yuvj420p (PC/full range)
+		// → YouTube yuv420p (TV/limited range). Bu `swscaler ... deprecated pixel
+		// format ... set range correctly` warning'ini yo'qotadi.
+		filter := fmt.Sprintf(
+			"scale=%d:%d:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,"+
+				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
+				"format=yuv420p",
+			cfg.Width, cfg.Height, cfg.Width, cfg.Height,
+		)
+		args = append(args, "-vf", filter)
 	}
 	args = append(args, videoEncodeArgs(cfg)...)
 	return args
@@ -339,13 +357,27 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-pix_fmt", "yuv420p", // YouTube'ga mos
 		)
 	case EncoderOpenH264:
-		// LGPL FFmpeg build'lar uchun fallback CPU encoder
+		// LGPL FFmpeg build'lar uchun fallback CPU encoder (libx264 yo'q paytda).
+		//
+		// MUHIM bayroqlar:
+		//   - rc_mode bitrate     — default "quality" emas, target bitrate'ni hurmat qilsin
+		//   - allow_skip_frames 1 — bitrate cheklovini qondirish uchun frame skip ruxsat;
+		//                            bu YO'Q paytda libopenh264 quyidagi warning yozadi:
+		//                            "bEnableFrameSkip = 0, bitrate can't be controlled..."
+		//   - keyint_min          — qat'iy keyframe oralig'i (YouTube majburiy)
+		//   - +global_header       — FLV muxer extradata'ni to'g'ri yozsin (YouTube qabul qilsin)
+		//   - dump_extra bsf       — har keyframe oldida SPS/PPS qayta yozish (YouTube qabuli barqaror)
 		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
+			"-rc_mode", "bitrate",
+			"-allow_skip_frames", "1",
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-g", gop,
+			"-keyint_min", gop,
 			"-profile:v", "main",
 			"-pix_fmt", "yuv420p",
+			"-flags", "+global_header",
+			"-bsf:v", "dump_extra=freq=keyframe",
 		)
 	case EncoderAMF:
 		// AMD GPU

@@ -210,13 +210,22 @@ func (r *Runner) Start(ctx context.Context) error {
 }
 
 // consumeLogs — stderr'dan satrlarni o'qib, subscriber'larga yuboradi.
+//
+// MUHIM: FFmpeg statistikani '\r' bilan yozadi (bir qatorni qayta-qayta yangilab),
+// final newline bermaydi. Standart bufio.ScanLines faqat '\n'da bo'ladi —
+// natijada barcha "frame=..." yangilanishlari yagona katta string'da keladi
+// va real-time progress imkonsiz. Maxsus splitter bilan '\r' va '\n' ikkalasini
+// ham ajratuvchi sifatida ishlatamiz.
 func (r *Runner) consumeLogs(reader io.Reader) {
 	scanner := bufio.NewScanner(reader)
-	// FFmpeg ba'zan uzun qatorlar yozadi
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Split(splitLinesCR)
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" {
+			continue
+		}
 		ll := LogLine{
 			Time:    time.Now(),
 			Level:   detectLevel(line),
@@ -224,6 +233,24 @@ func (r *Runner) consumeLogs(reader io.Reader) {
 		}
 		r.addLog(ll)
 	}
+}
+
+// splitLinesCR — bufio.SplitFunc: '\n' yoki '\r' bo'lganda qatorni qaytaradi.
+// FFmpeg statistika '\r' bilan keladigan bo'lsa, har bir yangilanish alohida
+// qator sifatida o'qiladi.
+func splitLinesCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for i, b := range data {
+		if b == '\n' || b == '\r' {
+			return i + 1, data[:i], nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 // detectLevel — log qatoridan darajani aniqlaydi.
