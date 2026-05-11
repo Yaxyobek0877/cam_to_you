@@ -1,28 +1,32 @@
-fix(v0.1.7): show actual FFmpeg error, not just "exit status N"
+fix(v0.1.8): auto-strip RTMP URL prefix from stream key
 
-User reported: "Ishga tushmadi: exit status 0xffffffffb" — opaque error
-that gives no clue WHY the stream failed.
+Root cause of "I/O error" (exit 0xffffffffb):
+User entered full URL "rtmp://a.rtmp.youtube.com/live2/KEY" in Stream Key
+field instead of just "KEY". Our code then prepends the base URL again,
+producing the duplicated:
 
-BACKEND fixes:
-- builder.go: stream loglevel raised from "warning" to "info"
-  Captures more diagnostic detail in log buffer.
-  UI still filters info-level via forwardLogs (no flood in Logs page).
+  rtmp://a.rtmp.youtube.com/live2/rtmp://a.rtmp.youtube.com/live2/KEY
 
-- runner.go: new enrichError() function
-  When process exits with error, appends last 8 warning/error log lines
-  to lastErr. If no warnings, uses last 5 lines verbatim.
-  Now user sees: "exit status 1\n\nFFmpeg chiqishi:\n• <actual reason>"
+FFmpeg fails to open this invalid URL with I/O error.
 
-FRONTEND fixes:
-- Streams.tsx: new ErrorBlock component
-  - Summary line shown directly under stream name
-  - "Batafsil ko'rsatish" button reveals full FFmpeg output
-  - "Loglarni ko'rish" link navigates to /logs page
-  - Multi-line errors render as monospace pre block
+FIXES:
 
-Now any stream failure surfaces the root cause without needing CLI debug:
-- Wrong stream key → "Server returned 403 Forbidden"
-- NVENC issue → "h264_nvenc init failed"
-- Network → "Connection refused" / "timed out"
+Backend (defensive):
+- stream/service.go: sanitizeStreamKey() — if key starts with rtmp:// or
+  rtmps://, extract just the part after the last slash before saving
+- db migration v2: cleans up existing rows where stream_key looks like
+  an RTMP URL (so users don't need to manually re-edit existing streams)
+
+Frontend (user-friendly):
+- New StreamKeyField component with:
+  - Auto-strip on type (user can paste full URL, only key kept)
+  - Live URL preview: shows final "<base>/<masked-key>" so user sees
+    exactly what will be used
+  - Warning hint when user pastes RTMP URL
+  - Per-platform instructions (YouTube Studio path, etc.)
+
+Now both scenarios work:
+- User pastes "rtmp://a.rtmp.youtube.com/live2/abc-def" → saved as "abc-def"
+- User pastes "abc-def" → saved as "abc-def"
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

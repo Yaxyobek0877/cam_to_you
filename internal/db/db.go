@@ -42,7 +42,7 @@ func Open(filePath string) (*sql.DB, error) {
 }
 
 // schemaVersion — joriy schema versiyasi. Yangi migration qo'shilsa, bu raqamni oshiring.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // migrate — schema versiyasini tekshiradi va kerakli SQL'larni ishga tushiradi.
 func migrate(conn *sql.DB) error {
@@ -75,6 +75,57 @@ func migrate(conn *sql.DB) error {
 		}
 	}
 
+	// V2 — mavjud stream key'larni tozalash (RTMP URL kiritilgan bo'lsa)
+	if current < 2 {
+		if err := applyV2(conn); err != nil {
+			return fmt.Errorf("v2 migration: %w", err)
+		}
+		if _, err := conn.Exec("INSERT INTO _schema_version(version) VALUES(2)"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// applyV2 — eski versiyalarda stream key sifatida noto'g'ri saqlangan RTMP URL'larni tozalaydi.
+// Misol: "rtmp://a.rtmp.youtube.com/live2/abc-def" → "abc-def"
+func applyV2(conn *sql.DB) error {
+	rows, err := conn.Query(`SELECT id, stream_key FROM streams WHERE stream_key LIKE 'rtmp%'`)
+	if err != nil {
+		return err
+	}
+	type update struct {
+		id  int64
+		key string
+	}
+	var updates []update
+	for rows.Next() {
+		var id int64
+		var key string
+		if err := rows.Scan(&id, &key); err != nil {
+			rows.Close()
+			return err
+		}
+		// Oxirgi `/` dan keyin nima borligini olamiz
+		newKey := key
+		for i := len(key) - 1; i >= 0; i-- {
+			if key[i] == '/' {
+				newKey = key[i+1:]
+				break
+			}
+		}
+		if newKey != key {
+			updates = append(updates, update{id, newKey})
+		}
+	}
+	rows.Close()
+
+	for _, u := range updates {
+		if _, err := conn.Exec(`UPDATE streams SET stream_key = ? WHERE id = ?`, u.key, u.id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -190,6 +190,84 @@ export function Streams() {
   );
 }
 
+// ============================== StreamKeyField ==============================
+
+// Stream key kiritish maydoni — to'liq URL kiritilgan bo'lsa avtomatik tozalaydi
+// va foydalanuvchiga oxirgi RTMP URL'ni ko'rsatadi.
+const platformBaseUrls: Record<string, string> = {
+  youtube: "rtmp://a.rtmp.youtube.com/live2/",
+  twitch: "rtmp://live.twitch.tv/app/",
+  facebook: "rtmps://live-api-s.facebook.com:443/rtmp/",
+};
+
+function StreamKeyField({
+  platform,
+  value,
+  onChange,
+}: {
+  platform: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const baseUrl = platformBaseUrls[platform] || "";
+
+  // Stream key'dan to'liq URL bo'lagini olib tashlaymiz
+  const sanitize = (input: string): string => {
+    let v = input.trim();
+    if (v.startsWith("rtmp://") || v.startsWith("rtmps://")) {
+      const lastSlash = v.lastIndexOf("/");
+      if (lastSlash !== -1 && lastSlash < v.length - 1) {
+        v = v.substring(lastSlash + 1);
+      }
+    }
+    return v;
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(sanitize(e.target.value));
+  };
+
+  const hasUrlPrefix = value.includes("rtmp://") || value.includes("rtmps://");
+  const finalUrl = baseUrl + value;
+  const maskedKey = value.length > 8 ? value.substring(0, 4) + "•".repeat(value.length - 8) + value.substring(value.length - 4) : value;
+
+  return (
+    <div>
+      <label className="label">Stream Key</label>
+      <PasswordInput
+        monospace
+        placeholder="xxxx-xxxx-xxxx-xxxx"
+        value={value}
+        onChange={handleChange}
+      />
+
+      {/* To'liq URL tarjimasi — foydalanuvchi nima ishlatilishini ko'radi */}
+      {value && (
+        <div className="mt-2 p-2 rounded-md bg-bg-subtle/40 border border-white/5 text-xs font-mono break-all">
+          <span className="text-gray-500">→ </span>
+          <span className="text-gray-400">{baseUrl}</span>
+          <span className="text-accent">{maskedKey}</span>
+        </div>
+      )}
+
+      <p className="text-xs text-gray-500 mt-1.5 flex items-start gap-1">
+        <span>💡</span>
+        <span>
+          {hasUrlPrefix && value.startsWith("rtmp") ? (
+            <span className="text-warning">
+              ⚠ To'liq URL kiritildi — avtomatik tozalandi. Faqat key qismi kerak.
+            </span>
+          ) : platform === "youtube" ? (
+            <>YouTube Studio → Go Live → <strong>Stream key</strong> qismidan nusxalang (faqat key, <code>rtmp://</code> emas)</>
+          ) : (
+            "Faqat stream key kiriting (to'liq URL emas)"
+          )}
+        </span>
+      </p>
+    </div>
+  );
+}
+
 // ============================== ErrorBlock ==============================
 
 // FFmpeg xatosini ko'p qatorli ko'rsatish + Logs sahifasiga ishora.
@@ -446,18 +524,11 @@ function StreamFormModal({
               />
             </div>
           ) : (
-            <div>
-              <label className="label">Stream Key</label>
-              <PasswordInput
-                monospace
-                placeholder="xxxx-xxxx-xxxx-xxxx"
-                value={form.streamKey ?? ""}
-                onChange={(e) => setForm({ ...form, streamKey: e.target.value })}
-              />
-              <p className="text-xs text-gray-500 mt-1.5">
-                💡 YouTube Studio → Go Live → Stream key'dan nusxalang
-              </p>
-            </div>
+            <StreamKeyField
+              platform={form.platform || "youtube"}
+              value={form.streamKey ?? ""}
+              onChange={(v) => setForm({ ...form, streamKey: v })}
+            />
           )}
 
           {/* Auto-restart */}

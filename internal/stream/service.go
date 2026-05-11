@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"cam_to_you/internal/ffmpeg"
@@ -114,6 +115,8 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 }
 
 // validate — saqlashdan oldin asosiy tekshiruvlar.
+// Stream key avtomatik tozalanadi: agar foydalanuvchi to'liq RTMP URL kiritsa,
+// faqat key qismi (oxirgi `/` dan keyin) saqlanadi.
 func validate(st *models.Stream) error {
 	if st.Name == "" {
 		return errors.New("nom bo'sh bo'lmasligi kerak")
@@ -136,6 +139,8 @@ func validate(st *models.Stream) error {
 			return errors.New("custom platforma uchun RTMP URL kerak")
 		}
 	} else {
+		// Avtomatik tozalash: trim + to'liq URL bo'lsa, key qismini ajratib olamiz
+		st.StreamKey = sanitizeStreamKey(st.StreamKey)
 		if st.StreamKey == "" {
 			return errors.New("stream key bo'sh bo'lmasligi kerak")
 		}
@@ -144,6 +149,24 @@ func validate(st *models.Stream) error {
 		st.RestartDelayMs = 5000
 	}
 	return nil
+}
+
+// sanitizeStreamKey — foydalanuvchi to'liq RTMP URL kiritgan bo'lsa, key qismini ajratib oladi.
+//
+// Kiruvchi:                                        →  Chiquvchi:
+//   "xxxx-xxxx-xxxx-xxxx"                          →  "xxxx-xxxx-xxxx-xxxx"
+//   "rtmp://a.rtmp.youtube.com/live2/xxxx-xxxx-..."→  "xxxx-xxxx-..."
+//   "rtmps://server/app/STREAM_KEY"                →  "STREAM_KEY"
+//   "  xxxx-xxxx-... "                             →  "xxxx-xxxx-..."
+func sanitizeStreamKey(key string) string {
+	key = strings.TrimSpace(key)
+	// Agar URL bo'lsa, oxirgi `/` dan keyin nima borligini olamiz
+	if strings.HasPrefix(key, "rtmp://") || strings.HasPrefix(key, "rtmps://") {
+		if idx := strings.LastIndex(key, "/"); idx != -1 && idx < len(key)-1 {
+			key = key[idx+1:]
+		}
+	}
+	return key
 }
 
 type scanner interface {
