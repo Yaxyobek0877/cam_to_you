@@ -92,6 +92,38 @@ export function initEventStore() {
         level = "warning";
         message = `Qayta urinish #${ev.payload}`;
         break;
+      case "live": {
+        // Birinchi frame YouTube'ga uzatildi — foydalanuvchini darrov xabardor qilamiz.
+        // Bu MUHIM: aks holda foydalanuvchi 2 ta warning ko'rib, "ulanmadi" deb o'ylaydi.
+        const p = ev.payload || {};
+        add({
+          time: new Date(),
+          source: "stream",
+          sourceId: ev.streamId,
+          level: "info",
+          type: "live",
+          message: p.message || "✅ Stream YouTube'ga uzatilmoqda",
+          raw: ev,
+        });
+        return;
+      }
+      case "progress": {
+        // FFmpeg statistikasi (har 5 sek'da): foydalanuvchi haqiqatdan ishlayotganini ko'radi.
+        const p = ev.payload || {};
+        const fps = parseFloat(p.fps || "0");
+        const bitrate = p.bitrate || "?";
+        const timeCode = p.time || "?";
+        add({
+          time: new Date(),
+          source: "stream",
+          sourceId: ev.streamId,
+          level: "info",
+          type: "progress",
+          message: `📡 ${fps.toFixed(0)} fps · ${bitrate} · ${timeCode} efirda`,
+          raw: ev,
+        });
+        return;
+      }
       case "exit_reason": {
         // FFmpeg chiqqanida oxirgi 8 qator — clean exit'da ham sababini ko'rsatadi
         const p = ev.payload || {};

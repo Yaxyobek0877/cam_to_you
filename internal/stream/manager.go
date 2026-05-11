@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,13 @@ const (
 	// EventExitReason — FFmpeg chiqqanidan keyin oxirgi log qatorlarini ko'rsatadi.
 	// Hatto toza chiqishda (exit 0) ham foydalanuvchi sababini tushunsin uchun.
 	EventExitReason EventType = "exit_reason"
+	// EventProgress — FFmpeg'ning periodik statistikasi (frame=, fps=, bitrate=).
+	// "Running" holatda foydalanuvchi stream haqiqatdan ishlayotganini bilishi uchun MUHIM.
+	// Aks holda u 2 ta warning ko'rib "ulanish yo'q" deb o'ylaydi.
+	EventProgress EventType = "progress"
+	// EventLive — birinchi frame YouTube'ga uchganida bir martalik tasdiq.
+	// "✅ Stream YouTube'ga ulanmoqda" tipidagi xabarni keltirib chiqaradi.
+	EventLive EventType = "live"
 )
 
 // Event — manager'dan UI'ga uzatiladigan hodisalar.
@@ -393,13 +401,70 @@ func detectExitHint(logText string, exitCode int) string {
 	return ""
 }
 
+// statsRegex — FFmpeg'ning periodik statistika qatorini tahlil qiladi.
+// Misol: "frame=  120 fps= 30 q=-0.0 size=    500KiB time=00:00:04.00 bitrate=1024.5kbits/s speed=1.0x"
+// Stream haqiqatdan ishlayotganini foydalanuvchiga ko'rsatish uchun ishlatamiz.
+var statsRegex = regexp.MustCompile(`frame=\s*(\d+)\s+fps=\s*([\d.]+).*?size=\s*(\S+).*?time=(\S+)\s+bitrate=\s*([\d.]+)kbits/s`)
+
 // forwardLogs — FFmpeg log'larini Manager hodisalariga aylantiradi.
+//
+// Logikasi:
+//   - Warning/Error — har biri darrov yuboriladi (foydalanuvchi tafsilotini ko'radi)
+//   - Info darajadagi statistika qatorlari ("frame=") — parse qilinib, EventProgress
+//     orqali yuboriladi. Birinchi shunday qator EventLive'ni keltirib chiqaradi —
+//     foydalanuvchiga "✅ Stream ishlamoqda" ni darrov ko'rsatadi.
+//   - Boshqa info qatorlari — yashirin (ko'p va asosan e'tiborga olinmaydi)
 func (m *Manager) forwardLogs(streamID int64, logCh <-chan ffmpeg.LogLine) {
+	var (
+		firstFrameSeen bool
+		lastProgressAt time.Time
+	)
+	const progressInterval = 5 * time.Second // har 5 sek'da bittadan ko'p yubormaslik
+
 	for ll := range logCh {
-		// Faqat warning va undan yuqori loglarni UI'ga jo'natamiz (info ko'p)
+		// Info darajada — statistika qatorimi tekshiramiz
 		if ll.Level == ffmpeg.LogInfo {
+			match := statsRegex.FindStringSubmatch(ll.Message)
+			if match == nil {
+				continue // oddiy info qatori — yashiramiz
+			}
+			// Statistika topildi: frames, fps, size, time, bitrate
+			frames, fps, size, timeCode, bitrate := match[1], match[2], match[3], match[4], match[5]
+
+			// Birinchi frame: foydalanuvchini xabardor qilamiz
+			if !firstFrameSeen {
+				firstFrameSeen = true
+				m.emit(Event{
+					Type:     EventLive,
+					StreamID: streamID,
+					Payload: map[string]interface{}{
+						"message": "✅ Stream ishlamoqda — YouTube'ga ma'lumot yuborilmoqda",
+						"frames":  frames,
+						"fps":     fps,
+					},
+				})
+			}
+
+			// Cooldown: 5 sek'da bir progress, log'ni spam qilmaslik
+			if !lastProgressAt.IsZero() && ll.Time.Sub(lastProgressAt) < progressInterval {
+				continue
+			}
+			lastProgressAt = ll.Time
+
+			m.emit(Event{
+				Type:     EventProgress,
+				StreamID: streamID,
+				Payload: map[string]interface{}{
+					"frames":  frames,
+					"fps":     fps,
+					"size":    size,
+					"time":    timeCode,
+					"bitrate": bitrate + "kbps",
+				},
+			})
 			continue
 		}
+		// Warning yoki Error — to'g'ridan to'g'ri yuboriladi
 		m.emit(Event{
 			Type:     EventLog,
 			StreamID: streamID,

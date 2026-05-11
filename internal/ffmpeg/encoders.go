@@ -19,7 +19,18 @@ type DetectedEncoders struct {
 }
 
 // BestH264 — uskunaga qarab eng tez H.264 encoder'ini qaytaradi.
-// Tartib: NVENC > QSV > AMF > X264 > OpenH264 > MediaFoundation
+// Tartib (v0.1.21 dan):
+//
+//	NVENC > QSV > AMF > X264 > MediaFoundation > OpenH264
+//
+// MUHIM o'zgartirish: MediaFoundation (h264_mf) endi OpenH264'dan AFZALROQ.
+// Sabab: libopenh264 H.264 profile (main/high) ni "UNSPECIFIC" ga
+// xaritalashga moyil — natijada YouTube qabul qiladi, lekin DEKOD QILA OLMAYDI.
+// h264_mf Windows-native, OBS va boshqa professional software ham shu encoder
+// ishlatadi. YouTube to'liq qabul qiladi.
+//
+// Foydalanuvchi qo'lda libopenh264'ni tanlasa ham ishlaydi, lekin "auto"da
+// h264_mf afzal — kamroq surprise.
 func (e DetectedEncoders) BestH264() string {
 	switch {
 	case e.NVENC:
@@ -30,10 +41,10 @@ func (e DetectedEncoders) BestH264() string {
 		return "h264_amf"
 	case e.X264:
 		return "libx264"
-	case e.OpenH264:
-		return "libopenh264"
 	case e.MediaFound:
 		return "h264_mf"
+	case e.OpenH264:
+		return "libopenh264"
 	}
 	return ""
 }
@@ -81,6 +92,33 @@ func ResetEncoderCache() {
 	detectOnce = sync.Once{}
 }
 
+// probeEncoder — Mavjud encoder'ni HAQIQATDAN sinab ko'radi: 1 frame
+// 320x240 piksellik test pattern'ni shu encoder bilan kodlashga harakat qiladi.
+// 3 sekund ichida muvaffaqiyat bo'lmasa, yo'q deb hisoblaymiz.
+//
+// 320x240 — eng kichik standart o'lcham (NVENC, openh264 va boshqalar uchun).
+// Bundan kichik bo'lsa, encoderlar fail beradi va "encoder yo'q" deb noto'g'ri
+// xulosa qilamiz.
+//
+// Sabab: ffmpeg.exe binary'da hardware encoder NOMLARI bo'lishi mumkin, lekin
+// kerakli driver/GPU/lisenziya yo'qligi sababli RUNTIME'da ishlamaydi. Bunday
+// holatda foydalanuvchi NVENC/QSV ni tanlasa, FFmpeg darrov xato beradi va
+// stream boshlanmaydi. Real probe bu muammoni oldini oladi.
+func probeEncoder(ffmpegBin, encoder string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpegBin,
+		"-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "color=size=320x240:rate=25:duration=0.5",
+		"-c:v", encoder,
+		"-frames:v", "5",
+		"-f", "null", "-",
+	)
+	hideConsoleWindow(cmd)
+	err := cmd.Run()
+	return err == nil
+}
+
 func detect(ffmpegBin string) DetectedEncoders {
 	var d DetectedEncoders
 	if ffmpegBin == "" {
@@ -97,13 +135,31 @@ func detect(ffmpegBin string) DetectedEncoders {
 		return d
 	}
 
+	// 1-bosqich: binary'da encoder nomini qidiramiz
 	text := string(out)
-	d.NVENC = strings.Contains(text, "h264_nvenc")
-	d.QuickSync = strings.Contains(text, "h264_qsv")
-	d.AMF = strings.Contains(text, "h264_amf")
+	hasNVENCName := strings.Contains(text, "h264_nvenc")
+	hasQSVName := strings.Contains(text, "h264_qsv")
+	hasAMFName := strings.Contains(text, "h264_amf")
+
+	// 2-bosqich: hardware encoderlar — har birini HAQIQATDAN probe qilamiz.
+	// Aks holda foydalanuvchi GPU'siz uskunada NVENC tanlasa, stream darrov fail.
+	// CPU encoder'lar uchun probe SHART EMAS — har doim ishlaydi.
+	if hasNVENCName {
+		d.NVENC = probeEncoder(ffmpegBin, "h264_nvenc")
+	}
+	if hasQSVName {
+		d.QuickSync = probeEncoder(ffmpegBin, "h264_qsv")
+	}
+	if hasAMFName {
+		d.AMF = probeEncoder(ffmpegBin, "h264_amf")
+	}
 	d.X264 = strings.Contains(text, "libx264")
 	d.OpenH264 = strings.Contains(text, "libopenh264")
-	d.MediaFound = strings.Contains(text, "h264_mf")
+	// MediaFoundation ham hardware backed bo'lib bo'lishi mumkin (Intel/NVIDIA HW
+	// orqali) — probe qilamiz, aks holda GPU'siz tizimda ishlamasligi mumkin.
+	if strings.Contains(text, "h264_mf") {
+		d.MediaFound = probeEncoder(ffmpegBin, "h264_mf")
+	}
 	return d
 }
 

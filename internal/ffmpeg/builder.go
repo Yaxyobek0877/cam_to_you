@@ -28,6 +28,7 @@ const (
 	EncoderAMF       Encoder = "h264_amf"    // AMD GPU
 	EncoderX264      Encoder = "libx264"     // CPU (GPL)
 	EncoderOpenH264  Encoder = "libopenh264" // CPU (LGPL fallback)
+	EncoderMF        Encoder = "h264_mf"     // Windows MediaFoundation (built-in, OBS/Twitch ham ishlatadi)
 	EncoderCopy      Encoder = "copy"        // qayta kodlamaslik (faqat single uchun)
 )
 
@@ -151,6 +152,22 @@ func Build(cfg StreamConfig) ([]string, error) {
 		args = append(args, "-i", cam.RTSPURL)
 	}
 
+	// 2b) JIM AUDIO INPUT (oxirida — index = needed)
+	//
+	// MUHIM kuzatuv (v0.1.22): Hikvision sub-stream'da audio yo'q. Kamera audio'siz
+	// FFmpeg "video-only" stream yuboradi. YouTube RTMP packetlarni QABUL QILADI,
+	// LEKIN broadcast'ni TAN OLMAYDI — YouTube live broadcast'da audio MAJBURIY.
+	// Test pattern bilan (sine audio + libopenh264) YouTube ko'rsatadi.
+	// Real kamera bilan (audio yo'q) YouTube hech qachon ko'rsatmaydi.
+	//
+	// YECHIM: lavfi anullsrc bilan jim AAC stereo audio yaratamiz. Bu kamera
+	// ovozini bermaydi (kamera'da o'sha bo'lsa ham), lekin YouTube qabul qiladi.
+	// Kelajakda: cfg.Audio.Mode == "index" → o'sha kameradan audio (probe kerak).
+	args = append(args,
+		"-f", "lavfi",
+		"-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+	)
+
 	// 3) Layout'ga qarab filter va map argumentlari
 	if cfg.Layout == LayoutSingle {
 		args = append(args, buildSingleArgs(cfg)...)
@@ -199,10 +216,34 @@ func buildSingleArgs(cfg StreamConfig) []string {
 		args = append(args, "-c:v", "copy")
 		return args
 	}
-	// NVENC + CUDA hardware path bilan -vf format conflict. Faqat CPU
-	// encoderlarda format konvertatsiyasi.
+	// CPU encoderlarda — sozlangan W:H ga scale qilamiz + yuv420p format.
+	// Bu ZARUR: aks holda kamera sub-stream 640x360 chiqsa, output ham 640x360
+	// bo'ladi (foydalanuvchi 1080p tanlagan bo'lsa ham). YouTube past sifat ko'rsatadi.
+	//
+	// `force_original_aspect_ratio=decrease` — agar manba aspect ratio farq qilsa,
+	// chetga qora qora chiziqlar emas, balki passdek-fitiziya saqlab kichiklashtirish.
+	// `pad` — qoldiq pikselni qora bilan to'ldirish (chetlari toza ko'rinadi).
+	//
+	// NVENC esa CUDA hardware path bilan ishlaydi — scale_cuda foydalanish kerak,
+	// lekin hozircha NVENC'da scaling qilmaymiz (kamera sub-stream odatda kerakli
+	// resolution'da bo'ladi). Yangilash kerak bo'lganda alohida fix.
 	if cfg.Encoder != EncoderNVENC {
-		args = append(args, "-vf", "format=yuv420p")
+		// `scale=W:H:in_range=full:out_range=tv` — Hikvision yuvj420p (PC/full range)
+		// → YouTube yuv420p (TV/limited range). Bu `swscaler ... deprecated pixel
+		// format ... set range correctly` warning'ini yo'qotadi.
+		//
+		// h264_mf MediaFoundation encoder nv12 ni qabul qiladi; boshqalar yuv420p.
+		pixFmt := "yuv420p"
+		if cfg.Encoder == EncoderMF {
+			pixFmt = "nv12"
+		}
+		filter := fmt.Sprintf(
+			"scale=%d:%d:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,"+
+				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
+				"format=%s",
+			cfg.Width, cfg.Height, cfg.Width, cfg.Height, pixFmt,
+		)
+		args = append(args, "-vf", filter)
 	}
 	args = append(args, videoEncodeArgs(cfg)...)
 	return args
@@ -339,12 +380,37 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-pix_fmt", "yuv420p", // YouTube'ga mos
 		)
 	case EncoderOpenH264:
-		// LGPL FFmpeg build'lar uchun fallback CPU encoder
+		// LGPL FFmpeg build'lar uchun fallback CPU encoder (libx264 yo'q paytda).
+		//
+		// MUHIM tarix:
+		//   v0.1.20 da `-profile:v main` ishlatilgandi — bu libopenh264 da
+		//   "layerId(0) doesn't support profile(578), change to UNSPECIFIC profile"
+		//   warning'ini keltirib chiqarar edi. UNSPECIFIC profile = profile_idc=0
+		//   H.264 oqimi → YouTube qabul qiladi, lekin DEKOD QILA OLMAYDI.
+		//   Natija: Cam2You "stream ishlamoqda" deydi, YouTube "translatsiya
+		//   kelmayapti" deydi.
+		//
+		//   v0.1.21 da `-profile:v high` ga o'tdik — bu PRO_HIGH=100 ga aniq
+		//   xaritalanadi va YouTube to'g'ri dekod qiladi. OBS va boshqa
+		//   software ham high profile ishlatadi.
+		//
+		// MUHIM bayroqlar:
+		//   - profile:v high      — UNSPECIFIC profile bug'ini chetlab o'tadi
+		//   - rc_mode bitrate     — default "quality" emas, target bitrate'ni hurmat qilsin
+		//   - allow_skip_frames 1 — bitrate cheklovini qondirish uchun frame skip ruxsat
+		//   - keyint_min          — qat'iy keyframe oralig'i (YouTube majburiy)
+		//
+		// `+global_header` va `dump_extra` v0.1.21 da OLIB TASHLANDI — FLV muxer
+		// default holatda SPS/PPS'ni to'g'ri joylashtiradi, bu bayroqlar keraksiz
+		// va ba'zi YouTube ingest server'larida muammo qiladi.
 		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
+			"-profile:v", "high",
+			"-rc_mode", "bitrate",
+			"-allow_skip_frames", "1",
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-g", gop,
-			"-profile:v", "main",
+			"-keyint_min", gop,
 			"-pix_fmt", "yuv420p",
 		)
 	case EncoderAMF:
@@ -360,6 +426,22 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-g", gop,
 			"-bf", "0",
 			"-pix_fmt", "yuv420p",
+		)
+	case EncoderMF:
+		// Windows MediaFoundation — Microsoft'ning o'rnatilgan H.264 encoder'i.
+		// OBS, vMix va boshqa software ham shu encoder ishlatadi. libopenh264 ga
+		// nisbatan AFZAL: profile aniq xaritalanadi va YouTube to'liq qabul qiladi.
+		//
+		// MUHIM: h264_mf nv12 pixel format'ni kutadi (yuv420p emas).
+		// Bu buildSingleArgs'da scale filter chiqishini h264_mf uchun nv12 ga
+		// keltirilishi kerak — quyida `pix_fmt nv12` shu uchun.
+		gop := strconv.Itoa(cfg.FPS * 2)
+		args = append(args,
+			"-rate_control", "cbr",
+			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
+			"-g", gop,
+			"-bf", "0",
+			"-pix_fmt", "nv12",
 		)
 	}
 
@@ -379,29 +461,29 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 //   - 128-160 kbps
 //
 // Hikvision PCM mu-law 8kHz mono → AAC 44.1kHz stereo 128k.
+//
+// v0.1.22 dan: Build() kamera input'laridan KEYIN anullsrc (jim audio) input
+// qo'shadi. Demak anullsrc'ning input indexi = len(Cameras). Audio mapping
+// shu indexga ishora qiladi:
+//
+//	"muted"   → -an (audio umuman yo'q — YouTube buni qabul qilmaydi, ehtiyot bo'l)
+//	"first"   → AVVAL kamera 0 audio, AKS HOLDA anullsrc (probe kerak; hozir anullsrc)
+//	"index"   → tanlangan kamera audio, AKS HOLDA anullsrc
+//
+// Probe yo'qligi sababli "first" va "index" hozir DOIM anullsrc'ni ishlatadi
+// (kamera audio'sini ishlatmaydi). Kelajakda probe qo'shilsa, kamera audio
+// mavjud bo'lsa shundan ishlatiladi.
 func buildAudioArgs(cfg StreamConfig) []string {
-	switch cfg.Audio.Mode {
-	case "muted":
-		return []string{"-an"} // -an = audio yo'q
-	case "index":
-		idx := cfg.Audio.CameraSource
-		if idx < 0 || idx >= len(cfg.Cameras) {
-			idx = 0
-		}
-		return []string{
-			"-map", fmt.Sprintf("%d:a?", idx),
-			"-c:a", "aac",
-			"-b:a", "128k",
-			"-ar", "44100",
-			"-ac", "2", // YouTube uchun stereo majburiy
-		}
-	default: // "first" yoki bo'sh
-		return []string{
-			"-map", "0:a?",
-			"-c:a", "aac",
-			"-b:a", "128k",
-			"-ar", "44100",
-			"-ac", "2", // mono → stereo upmix
-		}
+	if cfg.Audio.Mode == "muted" {
+		return []string{"-an"}
+	}
+	// anullsrc indexi = kameralar sonidan keyin (oxirgi input)
+	silentIdx := len(cfg.Cameras)
+	return []string{
+		"-map", fmt.Sprintf("%d:a", silentIdx),
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-ar", "44100",
+		"-ac", "2",
 	}
 }
