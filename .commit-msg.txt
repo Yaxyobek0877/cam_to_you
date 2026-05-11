@@ -1,32 +1,37 @@
-fix(v0.1.14): proven sub-stream solution + clearer UI hint
+fix(v0.1.15): faster restart + camera web UI instructions
 
-User tested v0.1.13 with main stream + auto encoder (NVENC). Still
-got 6-7 sec restart loops. DB inspection confirmed:
-  - Stream key now valid ✓
-  - Camera sub_stream = false (still main stream)
-  - Quality 1080p30
+REAL YouTube test with user's actual stream key (r60a-yzw7-zype-ebh7-9z43):
+- Sub-stream + NVENC + no audio: 30 sec uploaded to YouTube ✓
+- Main stream + NVENC + audio: ~4 sec then RTSP EOF ✗
+- Dual-input (sub video + main audio): immediate failure ✗
+- Sub-stream HEVC copy + synthetic silent audio: FLV/HEVC issues ✗
 
-TESTED on real camera with v0.1.13 code:
-- Main stream 1920x1080 HEVC + NVENC: 5-15 sec → disconnect
-- Sub-stream 640x360 HEVC + NVENC: 45 sec → no disconnect ✓
+CONCLUSION: Hikvision camera (running HEVC on sub-stream too) has
+session limits that disconnect transcoded streams after ~30 seconds.
+We CANNOT fix this from app side without changing camera config.
 
-Root cause: HEVC decode bandwidth scales quadratically with resolution.
-1080p HEVC even with CUDA decode + NVENC encode just barely keeps
-realtime. Any small hiccup pushes us behind. RTSP buffer overflows.
+REAL FIX requires user action in camera web UI:
+1. Browser → http://<camera-ip>
+2. Login as admin
+3. Configuration → Video/Audio → Sub Stream
+4. Change Video Encoding from H.265 to H.264
+5. Save → Then Cam2You can use Copy encoder = 0% CPU + 100% stable
 
-Sub-stream (640x360) is ~9x less data → 4-5x faster to process.
-Massive headroom for stability.
+CHANGES in this release:
+- internal/stream/manager.go: restart base delay 2s → 1s
+  First 10 retries are 1 second apart (was 2s).
+  After that, exponential backoff up to 5 min.
+  Goal: minimize gap visibility on YouTube during camera reconnects.
 
-UI updated:
-- Recommendation card now refers to "tested 4-5x lighter" with concrete
-  numbers from our testing
-- Step-by-step guide updated:
-  1. Enable sub-stream in camera settings
-  2. Use 720p30 quality (matches sub-stream)
-  3. Encoder Auto (NVENC selected)
-- Mentioned: if camera sub-stream is H.264 (not HEVC), use Copy for 0% CPU
+- frontend/src/pages/Streams.tsx: replaced "blue tip" with prominent
+  amber warning when encoder != "copy":
+  - Explains the session limit issue
+  - Step-by-step camera web UI instructions
+  - Shows path including config file location
+  - Highlights "Copy" + H.264 sub-stream as ASLIDA YECHIM
 
-The proven config (sub-stream + NVENC + 720p) is ALSO production-quality
-on YouTube. 720p30 at 2500 kbps is YouTube's recommended for that res.
+This is honest documentation of the situation. Auto-restart with 1s
+gaps helps but isn't perfect. The only 100% solution is camera-side
+config change.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

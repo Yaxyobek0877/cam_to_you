@@ -543,22 +543,28 @@ function StreamFormModal({
             </div>
           )}
 
-          {/* HEVC kameralar uchun tavsiya — sinov natijalari bilan tasdiqlangan */}
+          {/* HEVC kameralar uchun aniq tavsiya */}
           {form.encoder !== "copy" && (
-            <div className="card bg-accent/5 border-accent/20 p-3 text-xs">
-              <p className="font-medium text-accent mb-1">⚡ Eng barqaror yo'l (sinab ko'rilgan)</p>
-              <p className="text-gray-300 mb-2">
-                Hikvision <strong>HEVC 1080p</strong> oqimini dekod qilish og'ir → uzilishlar. Sub-stream (640x360) <strong>4-5x yengil</strong> va barqaror.
+            <div className="card bg-warning/10 border-warning/30 p-3 text-xs space-y-2">
+              <p className="font-medium text-warning">⚠️ Hikvision HEVC kameralar uchun MUHIM</p>
+              <p className="text-gray-300">
+                Hikvision odatda <strong>HEVC (H.265)</strong> yuboradi. Cam2You uni H.264'ga transcoding qiladi, lekin <strong>kamera sessiya cheklovlari</strong> sabab har 10-30 sekundda RTSP uzulishi mumkin.
               </p>
-              <ol className="space-y-1 text-gray-300 ml-2 list-decimal list-inside">
-                <li><strong>Cameras</strong> → kamerangizni tahrirlash</li>
-                <li><strong>"Sub-stream"</strong> ni yoqib saqlang</li>
-                <li>Bu yerda <strong>Sifat: "720p30"</strong> tanlang (sub-stream'ga mos)</li>
-                <li>Encoder: <strong>"Auto"</strong> (NVENC tanlanadi)</li>
-                <li>Natija: <strong>uzluksiz oqim, 0 uzilish</strong></li>
-              </ol>
-              <p className="text-gray-500 mt-2 text-[11px]">
-                💡 Eng yengil variant: kamerada sub-stream H.264 (HEVC emas) ga sozlasangiz, Encoder "Copy" = 0% CPU
+
+              <div className="bg-bg-subtle/40 p-2 rounded space-y-1">
+                <p className="font-medium text-success">✅ ASLIDA YECHIM — kamerada H.264'ga o'tkazish:</p>
+                <ol className="text-gray-300 ml-2 list-decimal list-inside space-y-0.5">
+                  <li>Brauzeringizda kamerani oching (masalan: <code className="text-accent">http://192.168.200.5</code>)</li>
+                  <li>admin / parolingiz bilan kiring</li>
+                  <li>Configuration → <strong>Video/Audio</strong> → <strong>Sub Stream</strong></li>
+                  <li>"Video Encoding" ni <strong>H.264</strong> ga o'zgartiring (H.265 dan)</li>
+                  <li>Save → Cam2You'da Encoder "<strong>Copy</strong>" tanlang</li>
+                </ol>
+                <p className="text-success font-medium mt-1">Natija: 0% CPU, uzluksiz oqim ✨</p>
+              </div>
+
+              <p className="text-gray-500 text-[11px]">
+                Yoki vaqtinchalik: sub-stream + 720p30 + NVENC ishlatiladi, auto-restart har sekundda muammoni yechishga harakat qiladi.
               </p>
             </div>
           )}

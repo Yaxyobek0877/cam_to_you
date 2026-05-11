@@ -273,16 +273,13 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 
 		m.emit(Event{Type: EventRestart, StreamID: sr.stream.ID, Payload: sr.restartCount})
 
-		// Restart delay: birinchi 5 marta — qisqa (2s), keyin exponential backoff
-		// Qisqa delay kamera vaqtli uzilishlarda stream'ning uzilishini minimallashtirishadi.
-		baseDelay := time.Duration(sr.stream.RestartDelayMs) * time.Millisecond
-		if baseDelay > 2*time.Second {
-			baseDelay = 2 * time.Second // tez restart uchun
-		}
+		// Restart delay: birinchi 10 marta — juda qisqa (1s), keyin exponential backoff
+		// Kamera sessiya cheklovlari uchun tez restart — YouTube broadcast'ni saqlab qoladi.
+		baseDelay := 1 * time.Second
 		delay := baseDelay
-		if sr.restartCount > 5 {
-			// 6-urinishdan boshlab exponential — agar muammo doimiy bo'lsa
-			extra := sr.restartCount - 5
+		if sr.restartCount > 10 {
+			// 11-urinishdan boshlab exponential — muammo doimiy bo'lsa
+			extra := sr.restartCount - 10
 			for i := 0; i < extra && delay < 5*time.Minute; i++ {
 				delay *= 2
 			}
