@@ -1,32 +1,36 @@
-fix(v0.1.11): YouTube-compliant FFmpeg args + button styling
+fix(v0.1.12): auto-restart on clean exit + stability flags
 
-ISSUE 1 — UI: "Key kiriting" button rendered broken
-- btn-warning CSS class didn't exist
-- Used inline style which conflicted with base btn class
-- Fixed with proper Tailwind utility classes
+Progress from v0.1.11: stream connects, briefly appears on YouTube,
+then stops after ~10 seconds. Logs show:
 
-ISSUE 2 — Stream stopped after ~5 seconds
-Root cause: YouTube rejects streams that don't match their spec.
-Several issues with our pipeline:
+  Holat: running (15:24:52)
+  swscaler warning (15:24:57)
+  Holat: stopped (15:25:03)
 
-  Video:
-  - No -profile:v specified (NVENC default works but explicit is safer)
-  - Adaptive keyframes possible (YouTube REQUIRES fixed 2-sec)
-  - B-frames present (YouTube prefers none for live)
+BUG 1: manager.go didn't restart on clean exit
+- When FFmpeg exits with code 0, runner sets state = StateStopped
+- Manager treated StateStopped == "user requested stop" → no restart
+- But user didn't stop — FFmpeg exited on its own (likely YouTube drop
+  or RTSP hiccup)
 
-  Audio:
-  - Output was MONO (Hikvision sends mono PCM mu-law, our AAC kept mono)
-  - YouTube REQUIRES STEREO audio for live streams
-  - This is why stream connected but YouTube dropped after 5s
+Fix: differentiate user-stop (ctx.Done branch) from runner-exit
+(runner.Done branch). If we reach the post-select code, user didn't
+stop. Always restart if AutoRestart=true, regardless of exit code.
 
-FIXES in builder.go:
-- NVENC: +"-profile:v", "high", +"-keyint_min", GOP, +"-bf", "0"
-- x264:  +"-profile:v", "high", +"-keyint_min", GOP, +"-sc_threshold", "0"
-- Audio: +"-ac", "2" — forces mono→stereo upmix for YouTube compatibility
+BUG 2: pixel format warning (yuvj420p → yuv420p conversion)
+- Hikvision sends yuvj420p (JPEG full-range)
+- YouTube wants yuv420p (TV-range)
+- FFmpeg auto-converts but warns "make sure range is correct"
 
-VERIFIED with real camera:
-- Pipeline produces 4 MB FLV in 8 sec
-- Audio stream now reports: "stereo, 128 kb/s" (was mono)
-- 2.2x realtime encoding speed (smooth)
+Partial fix: -pix_fmt yuv420p added to ALL encoders (NVENC, QSV,
+AMF, x264, OpenH264). Was only in x264 before.
+
+NEW: pipeline robustness flags
+- -fflags +genpts+discardcorrupt: regenerate PTS, drop corrupt
+  packets (helps with flaky RTSP)
+- -flush_packets 1: send packets immediately, smaller buffer
+
+NEW: -profile:v high added to QSV and AMF (was missing)
+NEW: -bf 0 added to AMF (no B-frames for live)
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

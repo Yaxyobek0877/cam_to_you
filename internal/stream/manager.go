@@ -223,12 +223,15 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 		} else {
 			m.emit(Event{Type: EventStateChange, StreamID: sr.stream.ID, Payload: ffmpeg.StateRunning})
 
-			// Process chiqishini yoki tashqi ctx bekor qilinishini kutish
+			// Process chiqishini yoki tashqi ctx bekor qilinishini kutish.
+			// MUHIM: ctx.Done — bu foydalanuvchi/manager Stop() chaqirgan.
+			// runner.Done — FFmpeg o'zi chiqdi (xato yoki toza, qaysiy bo'lmasin —
+			// foydalanuvchi xohlamagan, restart qilamiz).
 			select {
 			case <-runner.Done():
-				// Process o'zi chiqdi
+				// FFmpeg o'zi chiqdi — restartable
 			case <-ctx.Done():
-				// Stop() chaqirildi yoki Shutdown
+				// Foydalanuvchi/Manager Stop() chaqirdi
 				_ = runner.Stop(5 * time.Second)
 				unsub()
 				close(logCh)
@@ -242,13 +245,16 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 			finalState := runner.State()
 			m.emit(Event{Type: EventStateChange, StreamID: sr.stream.ID, Payload: finalState})
 
-			// Normal chiqdimi yoki xato bilanmi?
-			if finalState == ffmpeg.StateStopped {
-				return // foydalanuvchi to'xtatdi
-			}
+			// Bu joyga yetishimiz uchun: ctx.Done bo'lmadi, demak foydalanuvchi
+			// to'xtatmagan. FFmpeg o'zi chiqdi (xato yoki toza). AutoRestart bo'lsa
+			// qayta urinamiz — toza chiqish ham kutilmagan hisoblanadi.
 			if !sr.stream.AutoRestart {
 				if m.notifier != nil {
-					_ = m.notifier.Notify("Stream xatolik", sr.stream.Name+": "+runner.LastError())
+					reason := runner.LastError()
+					if reason == "" {
+						reason = "FFmpeg kutilmagan ravishda chiqdi"
+					}
+					_ = m.notifier.Notify("Stream to'xtadi", sr.stream.Name+": "+reason)
 				}
 				return
 			}

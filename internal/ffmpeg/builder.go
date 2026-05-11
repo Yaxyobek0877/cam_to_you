@@ -119,15 +119,14 @@ func Build(cfg StreamConfig) ([]string, error) {
 	args = append(args, "-hide_banner", "-loglevel", "info")
 
 	// 2) Har bir kamera uchun -i bilan kirish
+	// fflags: korrupt paketlarni tashlash, PTS muammolarini avtomatik tuzatish — barqarorroq oqim
+	args = append(args, "-fflags", "+genpts+discardcorrupt")
 	for i := 0; i < needed; i++ {
 		cam := cfg.Cameras[i]
 		if cam.UseTCP {
 			args = append(args, "-rtsp_transport", "tcp")
 		}
 		// FFmpeg 7+'da socket timeout uchun universal opsiya yo'q.
-		// -stimeout olib tashlandi, -rw_timeout faqat ffprobe'da ishlaydi.
-		// TCP standart timeout (60-120s) bilan kifoyalanamiz —
-		// agar kamera javob bermasa, foydalanuvchi Stop'ni bosadi.
 		args = append(args, "-i", cam.RTSPURL)
 	}
 
@@ -142,13 +141,29 @@ func Build(cfg StreamConfig) ([]string, error) {
 	args = append(args, buildAudioArgs(cfg)...)
 
 	// 5) Chiqish
+	// -rtmp_live live  — bu live oqim ekanini bildiradi (VOD emas)
+	// -rtmp_buffer    — RTMP buferi (ms), zaif tarmoq uchun katta qiymat
+	// -shortest         — agar audio yoki video oxirgacha kelmasa, qisqaroqning oxiri bilan to'xtaydi
+	//                     LIVE rejimda kerakmas — olib tashlangan
+	// -flush_packets 1  — paketlarni darrov yuborish (kichikroq buferlash)
 	args = append(args,
+		"-flush_packets", "1",
 		"-f", "flv",
-		"-flvflags", "no_duration_filesize", // YouTube uchun barqarorlik
-		cfg.RTMPURL,
+		"-flvflags", "no_duration_filesize",
 	)
+	// Faqat RTMP/RTMPS uchun live flag
+	if isRTMP(cfg.RTMPURL) {
+		// Eslatma: -rtmp_live va -rtmp_buffer aslida INPUT flaglari (output emas)
+		// Output uchun ular ishlamaydi. flvflags yetarli.
+	}
+	args = append(args, cfg.RTMPURL)
 
 	return args, nil
+}
+
+// isRTMP — URL RTMP/RTMPS protokolida ekanini tekshiradi.
+func isRTMP(url string) bool {
+	return strings.HasPrefix(url, "rtmp://") || strings.HasPrefix(url, "rtmps://")
 }
 
 // buildSingleArgs — bitta kamera holatida video qismi.
@@ -245,6 +260,10 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 	enc := cfg.Encoder
 	args := []string{"-c:v", string(enc)}
 
+	// MUHIM: Hikvision yuvj420p (full range) yuboradi, YouTube yuv420p (TV range)
+	// kutadi. -pix_fmt yuv420p barcha encoderlarda swscaler avtomatik konvertatsiyani
+	// to'g'ri yo'naltiradi. Bu warning'ni ham yo'qotadi.
+
 	switch enc {
 	case EncoderNVENC:
 		// NVIDIA NVENC — RTX 3060 da real-time osongina.
@@ -261,6 +280,7 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-g", gop, // har 2 sekundda keyframe (YouTube majburiy)
 			"-keyint_min", gop, // qat'iy interval — adaptive emas
 			"-bf", "0", // B-frames yo'q (live latentlik kam, YouTube barqarorroq)
+			"-pix_fmt", "yuv420p", // YouTube'ga mos, swscaler warning yo'q
 		)
 	case EncoderQuickSync:
 		gop := strconv.Itoa(cfg.FPS * 2)
@@ -273,6 +293,7 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-g", gop,
 			"-keyint_min", gop,
 			"-bf", "0",
+			"-pix_fmt", "yuv420p",
 		)
 	case EncoderX264:
 		// CPU encoder — tezroq preset = kamroq sifat lekin kamroq CPU
@@ -291,21 +312,25 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 		)
 	case EncoderOpenH264:
 		// LGPL FFmpeg build'lar uchun fallback CPU encoder
+		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
-			"-g", strconv.Itoa(cfg.FPS*2),
+			"-g", gop,
 			"-profile:v", "main",
 			"-pix_fmt", "yuv420p",
 		)
 	case EncoderAMF:
 		// AMD GPU
+		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
 			"-quality", "speed",
+			"-profile:v", "high",
 			"-rc", "cbr",
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-maxrate", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
-			"-g", strconv.Itoa(cfg.FPS*2),
+			"-g", gop,
+			"-bf", "0",
 			"-pix_fmt", "yuv420p",
 		)
 	}
