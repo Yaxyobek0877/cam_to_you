@@ -1,32 +1,29 @@
-fix(v0.1.8): auto-strip RTMP URL prefix from stream key
+fix(v0.1.9): reject invalid stream keys + clear YouTube instructions
 
-Root cause of "I/O error" (exit 0xffffffffb):
-User entered full URL "rtmp://a.rtmp.youtube.com/live2/KEY" in Stream Key
-field instead of just "KEY". Our code then prepends the base URL again,
-producing the duplicated:
+Latest error: rtmp://a.rtmp.youtube.com/live2/live2
+Saved key was just "live2" — that's YouTube server's path segment,
+NOT the actual stream key. User likely entered an incomplete URL
+like "rtmp://a.rtmp.youtube.com/live2" (no actual key after).
 
-  rtmp://a.rtmp.youtube.com/live2/rtmp://a.rtmp.youtube.com/live2/KEY
+BACKEND validation:
+- service.go: new validateStreamKeyShape() rejects:
+  - Keys shorter than 10 chars (real keys are 16-25)
+  - Known path segments: "live", "live2", "app", "rtmp", "stream",
+    "flv", "channel", "ingest"
+- Error message guides user: "YouTube Studio → Go Live → Stream key"
 
-FFmpeg fails to open this invalid URL with I/O error.
+FRONTEND improvements:
+- StreamKeyField now validates as user types
+  - Green ✓ "Stream key formati to'g'ri ko'rinmoqda" if valid
+  - Red ❌ with specific reason if invalid
+  - URL preview shows masked key in green/red based on validity
+- New YouTubeKeyInstructions collapsible component
+  - Direct link to YouTube Studio
+  - Numbered 6-step instructions
+  - Shows expected key format: xxxx-xxxx-xxxx-xxxx-xxxx
+- Better placeholder: 5-group format (more accurate)
 
-FIXES:
-
-Backend (defensive):
-- stream/service.go: sanitizeStreamKey() — if key starts with rtmp:// or
-  rtmps://, extract just the part after the last slash before saving
-- db migration v2: cleans up existing rows where stream_key looks like
-  an RTMP URL (so users don't need to manually re-edit existing streams)
-
-Frontend (user-friendly):
-- New StreamKeyField component with:
-  - Auto-strip on type (user can paste full URL, only key kept)
-  - Live URL preview: shows final "<base>/<masked-key>" so user sees
-    exactly what will be used
-  - Warning hint when user pastes RTMP URL
-  - Per-platform instructions (YouTube Studio path, etc.)
-
-Now both scenarios work:
-- User pastes "rtmp://a.rtmp.youtube.com/live2/abc-def" → saved as "abc-def"
-- User pastes "abc-def" → saved as "abc-def"
+Now users get clear, actionable feedback BEFORE saving instead of
+cryptic FFmpeg errors after attempting to stream.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

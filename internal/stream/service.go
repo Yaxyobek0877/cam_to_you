@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -144,6 +145,10 @@ func validate(st *models.Stream) error {
 		if st.StreamKey == "" {
 			return errors.New("stream key bo'sh bo'lmasligi kerak")
 		}
+		// Shaklini tekshirish — masalan, "live2" qabul qilinmaydi
+		if err := validateStreamKeyShape(st.StreamKey); err != nil {
+			return err
+		}
 	}
 	if st.RestartDelayMs == 0 {
 		st.RestartDelayMs = 5000
@@ -167,6 +172,30 @@ func sanitizeStreamKey(key string) string {
 		}
 	}
 	return key
+}
+
+// Stream key sifatida noto'g'ri (path segment) qiymatlar. Bularni saqlashga ruxsat bermaymiz.
+var suspiciousKeyValues = map[string]bool{
+	"live": true, "live2": true, "live3": true,
+	"app": true, "rtmp": true, "stream": true,
+	"flv": true, "channel": true, "ingest": true,
+}
+
+// validateStreamKeyShape — key tashqi ko'rinishi bo'yicha tekshiruv.
+// Maqsad: foydalanuvchini noaniq "I/O error" emas, aniq xato xabari bilan ogohlantirish.
+func validateStreamKeyShape(key string) error {
+	if len(key) < 10 {
+		return fmt.Errorf("stream key juda qisqa (%d ta belgi) — YouTube Studio'dan to'liq key oling (~16-25 belgi, masalan: xxxx-xxxx-xxxx-xxxx)", len(key))
+	}
+	if suspiciousKeyValues[strings.ToLower(key)] {
+		return fmt.Errorf("\"%s\" — bu serverning yo'l qismi, stream key emas. YouTube Studio → Go Live → Stream key qismidan to'liq qiymatni nusxalang", key)
+	}
+	// Faqat path segmenti bo'lib qolgan bo'lishi mumkin (no dashes, all letters)
+	if !strings.ContainsAny(key, "-_") && len(key) < 15 {
+		// Real YouTube key'lar deyarli har doim chiziqcha bilan
+		// Cheklov bermayman — ehtimol custom platforma — lekin warning yetarli
+	}
+	return nil
 }
 
 type scanner interface {

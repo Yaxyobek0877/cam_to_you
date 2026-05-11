@@ -200,6 +200,18 @@ const platformBaseUrls: Record<string, string> = {
   facebook: "rtmps://live-api-s.facebook.com:443/rtmp/",
 };
 
+// Path segmentlari — bularni qabul qilmaymiz (foydalanuvchi xato qilgan ko'rinadi)
+const badKeyValues = new Set(["live", "live2", "live3", "app", "rtmp", "stream", "flv", "channel", "ingest"]);
+
+function validateKey(key: string): { ok: boolean; reason?: string } {
+  if (!key) return { ok: false, reason: "Bo'sh" };
+  if (key.length < 10) return { ok: false, reason: `Juda qisqa (${key.length} belgi, kamida 10 kerak)` };
+  if (badKeyValues.has(key.toLowerCase())) {
+    return { ok: false, reason: `"${key}" — bu serverning yo'l qismi, stream key emas` };
+  }
+  return { ok: true };
+}
+
 function StreamKeyField({
   platform,
   value,
@@ -227,16 +239,17 @@ function StreamKeyField({
     onChange(sanitize(e.target.value));
   };
 
-  const hasUrlPrefix = value.includes("rtmp://") || value.includes("rtmps://");
-  const finalUrl = baseUrl + value;
-  const maskedKey = value.length > 8 ? value.substring(0, 4) + "•".repeat(value.length - 8) + value.substring(value.length - 4) : value;
+  const validation = validateKey(value);
+  const maskedKey = value.length > 8
+    ? value.substring(0, 4) + "•".repeat(value.length - 8) + value.substring(value.length - 4)
+    : value;
 
   return (
     <div>
       <label className="label">Stream Key</label>
       <PasswordInput
         monospace
-        placeholder="xxxx-xxxx-xxxx-xxxx"
+        placeholder="xxxx-xxxx-xxxx-xxxx-xxxx"
         value={value}
         onChange={handleChange}
       />
@@ -246,24 +259,64 @@ function StreamKeyField({
         <div className="mt-2 p-2 rounded-md bg-bg-subtle/40 border border-white/5 text-xs font-mono break-all">
           <span className="text-gray-500">→ </span>
           <span className="text-gray-400">{baseUrl}</span>
-          <span className="text-accent">{maskedKey}</span>
+          <span className={validation.ok ? "text-success" : "text-danger"}>{maskedKey}</span>
         </div>
       )}
 
-      <p className="text-xs text-gray-500 mt-1.5 flex items-start gap-1">
-        <span>💡</span>
-        <span>
-          {hasUrlPrefix && value.startsWith("rtmp") ? (
-            <span className="text-warning">
-              ⚠ To'liq URL kiritildi — avtomatik tozalandi. Faqat key qismi kerak.
-            </span>
-          ) : platform === "youtube" ? (
-            <>YouTube Studio → Go Live → <strong>Stream key</strong> qismidan nusxalang (faqat key, <code>rtmp://</code> emas)</>
-          ) : (
-            "Faqat stream key kiriting (to'liq URL emas)"
-          )}
-        </span>
-      </p>
+      {/* Validatsiya xulosasi */}
+      {value && !validation.ok && (
+        <div className="mt-2 p-2 rounded-md bg-danger/10 border border-danger/30 text-xs">
+          <p className="text-danger font-medium">❌ {validation.reason}</p>
+        </div>
+      )}
+      {value && validation.ok && (
+        <p className="mt-1.5 text-xs text-success flex items-center gap-1">
+          ✓ Stream key formati to'g'ri ko'rinmoqda
+        </p>
+      )}
+
+      {/* YouTube uchun aniq instruksiya */}
+      {platform === "youtube" && (
+        <YouTubeKeyInstructions />
+      )}
+    </div>
+  );
+}
+
+function YouTubeKeyInstructions() {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-3 p-3 rounded-md bg-accent/5 border border-accent/20 text-xs">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-accent hover:underline w-full text-left"
+      >
+        <span>📖</span>
+        <span className="font-medium">YouTube Stream key'ni qayerdan olish?</span>
+        <span className="ml-auto text-gray-500">{expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded && (
+        <ol className="mt-3 ml-1 space-y-2 text-gray-300 list-decimal list-inside">
+          <li>
+            <a
+              href="https://studio.youtube.com/channel/UC/livestreaming"
+              target="_blank"
+              rel="noopener"
+              className="text-accent hover:underline"
+            >
+              YouTube Studio
+            </a> ga kiring (yoki <strong>youtube.com</strong> → profilingiz → <strong>YouTube Studio</strong>)
+          </li>
+          <li>Chap menyudan <strong>"Create"</strong> → <strong>"Go live"</strong> (yoki <strong>"Stream"</strong>) tanlang</li>
+          <li>Yangi stream uchun ma'lumotlarni to'ldiring (nom, kategoriya)</li>
+          <li>"Stream settings" qismida <strong>"Stream key"</strong> maydonini topasiz</li>
+          <li>
+            <strong>"COPY"</strong> tugmasini bosing — bu key yangi versiyalarda{" "}
+            <code className="bg-bg px-1 py-0.5 rounded">xxxx-xxxx-xxxx-xxxx-xxxx</code> ko'rinishida
+          </li>
+          <li>Shu yerga paste qiling (Ctrl+V) — <strong>faqat key qismi</strong>, <code>rtmp://</code> emas</li>
+        </ol>
+      )}
     </div>
   );
 }
