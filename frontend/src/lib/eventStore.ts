@@ -92,6 +92,39 @@ export function initEventStore() {
         level = "warning";
         message = `Qayta urinish #${ev.payload}`;
         break;
+      case "exit_reason": {
+        // FFmpeg chiqqanida oxirgi 8 qator — clean exit'da ham sababini ko'rsatadi
+        const p = ev.payload || {};
+        const exitCode = p.exitCode ?? "?";
+        const lines: Array<{ message: string; level?: string }> = p.lines || [];
+        level = exitCode === 0 ? "warning" : "error";
+        // Birinchi qator — qisqa summary
+        const summary = `🔍 FFmpeg chiqdi (exit=${exitCode}, state=${p.state || "?"}). Oxirgi qatorlar:`;
+        add({
+          time: new Date(),
+          source: "stream",
+          sourceId: ev.streamId,
+          level,
+          type: "exit_reason",
+          message: summary,
+          raw: ev,
+        });
+        // Har bir log qatorini alohida entry qilib qo'shamiz — UI'da yaxshi ko'rinadi
+        for (const ln of lines) {
+          const lnLevel: LogLevel =
+            ln.level === "error" ? "error" : ln.level === "warning" ? "warning" : "info";
+          add({
+            time: new Date(),
+            source: "ffmpeg",
+            sourceId: ev.streamId,
+            level: lnLevel,
+            type: "exit_log",
+            message: `  └ ${ln.message}`,
+            raw: ln,
+          });
+        }
+        return; // exit_reason'ni alohida tarzda qayta ishladik
+      }
       default:
         message = ev.type;
     }

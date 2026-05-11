@@ -42,6 +42,9 @@ const (
 	EventLog         EventType = "log"
 	EventError       EventType = "error"
 	EventRestart     EventType = "restart"
+	// EventExitReason — FFmpeg chiqqanidan keyin oxirgi log qatorlarini ko'rsatadi.
+	// Hatto toza chiqishda (exit 0) ham foydalanuvchi sababini tushunsin uchun.
+	EventExitReason EventType = "exit_reason"
 )
 
 // Event — manager'dan UI'ga uzatiladigan hodisalar.
@@ -245,6 +248,11 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 			finalState := runner.State()
 			m.emit(Event{Type: EventStateChange, StreamID: sr.stream.ID, Payload: finalState})
 
+			// DIAGNOSTIKA: chiqish sababini ko'rsatamiz — toza chiqishda ham
+			// FFmpeg'ning oxirgi qatorlarini foydalanuvchiga ko'rsatish kerak.
+			// Aks holda "stopped → restart" loop'ida nima xato bo'layotgani bilinmaydi.
+			m.emitExitReason(sr.stream.ID, runner)
+
 			// Bu joyga yetishimiz uchun: ctx.Done bo'lmadi, demak foydalanuvchi
 			// to'xtatmagan. FFmpeg o'zi chiqdi (xato yoki toza). AutoRestart bo'lsa
 			// qayta urinamiz — toza chiqish ham kutilmagan hisoblanadi.
@@ -295,6 +303,40 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 			return
 		}
 	}
+}
+
+// emitExitReason — FFmpeg chiqqanidan keyin oxirgi 8 ta log qatorini UI'ga yuboradi.
+// Foydalanuvchi nima sababdan stream uzilganini ko'rishi uchun MUHIM —
+// runner.lastErr toza chiqishda bo'sh qoladi va sabab yashirinib qoladi.
+func (m *Manager) emitExitReason(streamID int64, runner *ffmpeg.Runner) {
+	logs := runner.RecentLogs()
+	if len(logs) == 0 {
+		return
+	}
+	// Oxirgi 8 qator yetarli — odatda chiqish sababi shu yerda
+	const maxLines = 8
+	start := len(logs) - maxLines
+	if start < 0 {
+		start = 0
+	}
+	lines := make([]map[string]interface{}, 0, len(logs)-start)
+	for i := start; i < len(logs); i++ {
+		lines = append(lines, map[string]interface{}{
+			"time":    logs[i].Time.Format(time.RFC3339),
+			"level":   string(logs[i].Level),
+			"message": logs[i].Message,
+		})
+	}
+	exitCode := runner.ExitCode()
+	m.emit(Event{
+		Type:     EventExitReason,
+		StreamID: streamID,
+		Payload: map[string]interface{}{
+			"exitCode": exitCode,
+			"state":    string(runner.State()),
+			"lines":    lines,
+		},
+	})
 }
 
 // forwardLogs — FFmpeg log'larini Manager hodisalariga aylantiradi.

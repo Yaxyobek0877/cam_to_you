@@ -97,6 +97,16 @@ func (r *Runner) LastError() string {
 	return r.lastErr
 }
 
+// ExitCode — FFmpeg chiqish kodini qaytaradi.
+// 0  = toza chiqish (kamera/RTMP EOF berdi yoki o'zi yopildi)
+// >0 = xato kodi (ulanish, autentifikatsiya, codec va h.k.)
+// -1 = hali ishlamoqda yoki kill qilingan.
+func (r *Runner) ExitCode() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.exitCode
+}
+
 // Uptime — process qancha vaqt ishlaganini qaytaradi.
 func (r *Runner) Uptime() time.Duration {
 	r.mu.RLock()
