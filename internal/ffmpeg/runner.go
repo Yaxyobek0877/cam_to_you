@@ -284,12 +284,59 @@ func (r *Runner) waitExit(cmd *exec.Cmd, stdin io.Closer) {
 			r.state = StateStopped
 		} else {
 			r.state = StateError
-			r.lastErr = err.Error()
+			// Xato xabariga FFmpeg'ning so'nggi qatorlarini qo'shamiz —
+			// "exit status 1" gina yetarli emas, foydalanuvchi sababini bilishi kerak.
+			r.lastErr = enrichError(err.Error(), r.logBuf)
 		}
 	} else {
 		r.state = StateStopped
 	}
 	r.mu.Unlock()
+}
+
+// enrichError — exit kodiga FFmpeg log buferdagi so'nggi qatorlarni qo'shadi.
+// Foydalanuvchi UI'da darrov nima xato bo'lganini ko'radi.
+func enrichError(exitMsg string, logs []LogLine) string {
+	if len(logs) == 0 {
+		return exitMsg
+	}
+
+	// Avval xato/warning qatorlarini qidiramiz (eng informativ)
+	var hints []string
+	for i := len(logs) - 1; i >= 0 && len(hints) < 8; i-- {
+		ll := logs[i]
+		if ll.Level == LogError || ll.Level == LogWarning {
+			hints = append([]string{ll.Message}, hints...)
+		}
+	}
+
+	// Agar warning/error topilmasa, oddiy so'nggi 5 qatorni olamiz
+	if len(hints) == 0 {
+		n := len(logs)
+		start := n - 5
+		if start < 0 {
+			start = 0
+		}
+		for i := start; i < n; i++ {
+			hints = append(hints, logs[i].Message)
+		}
+	}
+
+	if len(hints) == 0 {
+		return exitMsg
+	}
+	return exitMsg + "\n\nFFmpeg chiqishi:\n• " + joinLines(hints)
+}
+
+func joinLines(lines []string) string {
+	out := ""
+	for i, l := range lines {
+		if i > 0 {
+			out += "\n• "
+		}
+		out += l
+	}
+	return out
 }
 
 // Stop — FFmpeg'ga 'q' tugmasini "bosadi" (graceful), keyin majburiy.

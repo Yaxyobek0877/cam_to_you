@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
-  Plus, Radio, Edit2, Trash2, X, Loader2, Play, Square,
+  Plus, Radio, Edit2, Trash2, X, Loader2, Play, Square, ScrollText,
 } from "lucide-react";
 import {
   listStreams, createStream, updateStream, deleteStream,
@@ -40,6 +41,7 @@ const emptyStream: Partial<Stream> = {
 
 export function Streams() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const streamsQ = useQuery({ queryKey: ["streams"], queryFn: listStreams });
   const statusQ = useQuery({
     queryKey: ["allStatus"],
@@ -47,6 +49,7 @@ export function Streams() {
     refetchInterval: 2_000,
   });
   const [editing, setEditing] = useState<Partial<Stream> | null>(null);
+  const [expandedError, setExpandedError] = useState<number | null>(null);
 
   const [startError, setStartError] = useState<{ streamId: number; msg: string } | null>(null);
   const startMut = useMutation({
@@ -124,15 +127,14 @@ export function Streams() {
                         {layoutInfo[s.layout].label} • {s.quality} • {s.platform}
                         {st?.state === "running" && ` • ${formatUptime(st.uptime)}`}
                       </p>
-                      {st?.lastError && st.state === "error" && (
-                        <p className="text-xs text-danger mt-1 truncate" title={st.lastError}>
-                          {st.lastError}
-                        </p>
-                      )}
-                      {startError && startError.streamId === s.id && (
-                        <p className="text-xs text-danger mt-1 break-words" title={startError.msg}>
-                          ⚠ Ishga tushmadi: {startError.msg}
-                        </p>
+                      {((st?.lastError && st.state === "error") ||
+                        (startError && startError.streamId === s.id)) && (
+                        <ErrorBlock
+                          message={st?.lastError || startError?.msg || ""}
+                          expanded={expandedError === s.id}
+                          onToggle={() => setExpandedError(expandedError === s.id ? null : s.id)}
+                          onShowLogs={() => navigate("/logs")}
+                        />
                       )}
                     </div>
                   </div>
@@ -184,6 +186,58 @@ export function Streams() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ============================== ErrorBlock ==============================
+
+// FFmpeg xatosini ko'p qatorli ko'rsatish + Logs sahifasiga ishora.
+function ErrorBlock({
+  message,
+  expanded,
+  onToggle,
+  onShowLogs,
+}: {
+  message: string;
+  expanded: boolean;
+  onToggle: () => void;
+  onShowLogs: () => void;
+}) {
+  const lines = message.split("\n").filter((l) => l.trim() !== "");
+  const summary = lines[0] || "Noma'lum xato";
+  const hasDetails = lines.length > 1;
+
+  return (
+    <div className="mt-2 p-2 rounded-md bg-danger/10 border border-danger/30 text-xs">
+      <div className="flex items-start gap-2">
+        <span className="text-danger flex-shrink-0">⚠</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-danger font-medium break-words">{summary}</p>
+          {hasDetails && expanded && (
+            <pre className="mt-2 text-gray-300 whitespace-pre-wrap font-mono text-[11px] leading-relaxed max-h-48 overflow-auto">
+              {lines.slice(1).join("\n")}
+            </pre>
+          )}
+          <div className="flex items-center gap-3 mt-1.5">
+            {hasDetails && (
+              <button
+                onClick={onToggle}
+                className="text-accent hover:underline text-xs"
+              >
+                {expanded ? "Yashirish" : "Batafsil ko'rsatish"}
+              </button>
+            )}
+            <button
+              onClick={onShowLogs}
+              className="text-accent hover:underline text-xs flex items-center gap-1"
+            >
+              <ScrollText className="w-3 h-3" />
+              Loglarni ko'rish
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

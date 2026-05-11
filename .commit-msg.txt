@@ -1,21 +1,28 @@
-fix(v0.1.6): CRITICAL bug - missing -map 0:v broke stream startup
+fix(v0.1.7): show actual FFmpeg error, not just "exit status N"
 
-Root cause: builder.go's buildSingleArgs didn't add -map 0:v for video.
-buildAudioArgs adds -map 0:a? for audio. When ffmpeg sees ANY -map flag,
-it disables automatic stream selection. Result: stream contained ONLY
-audio (or failed completely if video was needed), explaining why
-"Start" button would spin and exit immediately.
+User reported: "Ishga tushmadi: exit status 0xffffffffb" — opaque error
+that gives no clue WHY the stream failed.
 
-Verified fix by running corrected ffmpeg command against real Hikvision
-camera (192.168.200.5) - produces valid 2 MB FLV in 5 seconds.
+BACKEND fixes:
+- builder.go: stream loglevel raised from "warning" to "info"
+  Captures more diagnostic detail in log buffer.
+  UI still filters info-level via forwardLogs (no flood in Logs page).
 
-ALSO:
-- Dashboard: Tizim holati card is now collapsible (default closed)
-  - Shows GPU/CPU badge + auto encoder in collapsed header
-  - Click to expand for full encoder badge grid
-  - Cleaner default look, info available on demand
-- Streams: inline error message when Start button fails
-  - Shows reason directly under stream name
-  - No longer "silent failure" — user sees what happened
+- runner.go: new enrichError() function
+  When process exits with error, appends last 8 warning/error log lines
+  to lastErr. If no warnings, uses last 5 lines verbatim.
+  Now user sees: "exit status 1\n\nFFmpeg chiqishi:\n• <actual reason>"
+
+FRONTEND fixes:
+- Streams.tsx: new ErrorBlock component
+  - Summary line shown directly under stream name
+  - "Batafsil ko'rsatish" button reveals full FFmpeg output
+  - "Loglarni ko'rish" link navigates to /logs page
+  - Multi-line errors render as monospace pre block
+
+Now any stream failure surfaces the root cause without needing CLI debug:
+- Wrong stream key → "Server returned 403 Forbidden"
+- NVENC issue → "h264_nvenc init failed"
+- Network → "Connection refused" / "timed out"
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

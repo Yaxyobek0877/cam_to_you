@@ -113,8 +113,10 @@ func Build(cfg StreamConfig) ([]string, error) {
 
 	args := []string{}
 
-	// 1) Global flaglar (loglarni soddalashtirish)
-	args = append(args, "-hide_banner", "-loglevel", "warning")
+	// 1) Global flaglar
+	// info darajada — connection holatini va mumkin bo'lgan xatolarni to'liq ko'rish uchun.
+	// forwardLogs UI'ga faqat warning+ jo'natadi, lekin lastErr to'liq logni saqlaydi.
+	args = append(args, "-hide_banner", "-loglevel", "info")
 
 	// 2) Har bir kamera uchun -i bilan kirish
 	for i := 0; i < needed; i++ {
