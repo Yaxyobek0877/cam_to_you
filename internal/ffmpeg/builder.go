@@ -137,21 +137,20 @@ func Build(cfg StreamConfig) ([]string, error) {
 		}
 
 		// RTSP stabillik bayroqlari — Hikvision sessiya cheklovlariga qarshi:
-		//   -stimeout 10s         : RTSP socket timeout (mikrosekundlarda) — agar ulanish
-		//                            10s ichida javob bermasa, FFmpeg uziladi (cheksiz kutish o'rniga)
-		//   -rw_timeout 10s       : read/write timeout — bir xil maqsad
+		//   -timeout 10s          : RTSP socket I/O timeout (mikrosekundlarda) —
+		//                            yangi FFmpeg builds'da -stimeout o'rniga -timeout
 		//   -reorder_queue_size 0 : RTSP paket buferi — kichikroq qilib, kameraga
 		//                            sessiyani aktiv tutib turish signali yuboramiz
 		//   -fflags +nobuffer+discardcorrupt : darrov o'qish, buzuq paketlarni tashlash
-		//   -probesize 32         : kichik probe — birinchi frame'larni tezroq o'qish
-		//   -analyzeduration 1M   : qisqa analiz — ulanishni tez ishga tushirish
+		//
+		// MUHIM: bu flag'lar -i dan OLDIN — input options'lar input URL'dan oldin keladi.
+		// -stimeout va -rw_timeout yangi FFmpeg'da "Option not found" beradi — ishlatmang.
+		// -probesize 32 bo'lsa "Could not find codec parameters" xato beradi — DEFAULT'ni
+		// (5M) qoldirish ma'qul. Tezroq probe kerak bo'lsa, 500K dan kam emas.
 		args = append(args,
-			"-stimeout", "10000000",
-			"-rw_timeout", "10000000",
+			"-timeout", "10000000",
 			"-reorder_queue_size", "0",
 			"-fflags", "+nobuffer+discardcorrupt",
-			"-probesize", "32",
-			"-analyzeduration", "1000000",
 		)
 
 		args = append(args, "-i", cam.RTSPURL)
