@@ -19,7 +19,18 @@ type DetectedEncoders struct {
 }
 
 // BestH264 — uskunaga qarab eng tez H.264 encoder'ini qaytaradi.
-// Tartib: NVENC > QSV > AMF > X264 > OpenH264 > MediaFoundation
+// Tartib (v0.1.21 dan):
+//
+//	NVENC > QSV > AMF > X264 > MediaFoundation > OpenH264
+//
+// MUHIM o'zgartirish: MediaFoundation (h264_mf) endi OpenH264'dan AFZALROQ.
+// Sabab: libopenh264 H.264 profile (main/high) ni "UNSPECIFIC" ga
+// xaritalashga moyil — natijada YouTube qabul qiladi, lekin DEKOD QILA OLMAYDI.
+// h264_mf Windows-native, OBS va boshqa professional software ham shu encoder
+// ishlatadi. YouTube to'liq qabul qiladi.
+//
+// Foydalanuvchi qo'lda libopenh264'ni tanlasa ham ishlaydi, lekin "auto"da
+// h264_mf afzal — kamroq surprise.
 func (e DetectedEncoders) BestH264() string {
 	switch {
 	case e.NVENC:
@@ -30,10 +41,10 @@ func (e DetectedEncoders) BestH264() string {
 		return "h264_amf"
 	case e.X264:
 		return "libx264"
-	case e.OpenH264:
-		return "libopenh264"
 	case e.MediaFound:
 		return "h264_mf"
+	case e.OpenH264:
+		return "libopenh264"
 	}
 	return ""
 }

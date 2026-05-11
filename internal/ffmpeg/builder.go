@@ -28,6 +28,7 @@ const (
 	EncoderAMF       Encoder = "h264_amf"    // AMD GPU
 	EncoderX264      Encoder = "libx264"     // CPU (GPL)
 	EncoderOpenH264  Encoder = "libopenh264" // CPU (LGPL fallback)
+	EncoderMF        Encoder = "h264_mf"     // Windows MediaFoundation (built-in, OBS/Twitch ham ishlatadi)
 	EncoderCopy      Encoder = "copy"        // qayta kodlamaslik (faqat single uchun)
 )
 
@@ -214,11 +215,17 @@ func buildSingleArgs(cfg StreamConfig) []string {
 		// `scale=W:H:in_range=full:out_range=tv` — Hikvision yuvj420p (PC/full range)
 		// → YouTube yuv420p (TV/limited range). Bu `swscaler ... deprecated pixel
 		// format ... set range correctly` warning'ini yo'qotadi.
+		//
+		// h264_mf MediaFoundation encoder nv12 ni qabul qiladi; boshqalar yuv420p.
+		pixFmt := "yuv420p"
+		if cfg.Encoder == EncoderMF {
+			pixFmt = "nv12"
+		}
 		filter := fmt.Sprintf(
 			"scale=%d:%d:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,"+
 				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
-				"format=yuv420p",
-			cfg.Width, cfg.Height, cfg.Width, cfg.Height,
+				"format=%s",
+			cfg.Width, cfg.Height, cfg.Width, cfg.Height, pixFmt,
 		)
 		args = append(args, "-vf", filter)
 	}
@@ -359,25 +366,36 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 	case EncoderOpenH264:
 		// LGPL FFmpeg build'lar uchun fallback CPU encoder (libx264 yo'q paytda).
 		//
+		// MUHIM tarix:
+		//   v0.1.20 da `-profile:v main` ishlatilgandi — bu libopenh264 da
+		//   "layerId(0) doesn't support profile(578), change to UNSPECIFIC profile"
+		//   warning'ini keltirib chiqarar edi. UNSPECIFIC profile = profile_idc=0
+		//   H.264 oqimi → YouTube qabul qiladi, lekin DEKOD QILA OLMAYDI.
+		//   Natija: Cam2You "stream ishlamoqda" deydi, YouTube "translatsiya
+		//   kelmayapti" deydi.
+		//
+		//   v0.1.21 da `-profile:v high` ga o'tdik — bu PRO_HIGH=100 ga aniq
+		//   xaritalanadi va YouTube to'g'ri dekod qiladi. OBS va boshqa
+		//   software ham high profile ishlatadi.
+		//
 		// MUHIM bayroqlar:
+		//   - profile:v high      — UNSPECIFIC profile bug'ini chetlab o'tadi
 		//   - rc_mode bitrate     — default "quality" emas, target bitrate'ni hurmat qilsin
-		//   - allow_skip_frames 1 — bitrate cheklovini qondirish uchun frame skip ruxsat;
-		//                            bu YO'Q paytda libopenh264 quyidagi warning yozadi:
-		//                            "bEnableFrameSkip = 0, bitrate can't be controlled..."
+		//   - allow_skip_frames 1 — bitrate cheklovini qondirish uchun frame skip ruxsat
 		//   - keyint_min          — qat'iy keyframe oralig'i (YouTube majburiy)
-		//   - +global_header       — FLV muxer extradata'ni to'g'ri yozsin (YouTube qabul qilsin)
-		//   - dump_extra bsf       — har keyframe oldida SPS/PPS qayta yozish (YouTube qabuli barqaror)
+		//
+		// `+global_header` va `dump_extra` v0.1.21 da OLIB TASHLANDI — FLV muxer
+		// default holatda SPS/PPS'ni to'g'ri joylashtiradi, bu bayroqlar keraksiz
+		// va ba'zi YouTube ingest server'larida muammo qiladi.
 		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
+			"-profile:v", "high",
 			"-rc_mode", "bitrate",
 			"-allow_skip_frames", "1",
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-g", gop,
 			"-keyint_min", gop,
-			"-profile:v", "main",
 			"-pix_fmt", "yuv420p",
-			"-flags", "+global_header",
-			"-bsf:v", "dump_extra=freq=keyframe",
 		)
 	case EncoderAMF:
 		// AMD GPU
@@ -392,6 +410,22 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 			"-g", gop,
 			"-bf", "0",
 			"-pix_fmt", "yuv420p",
+		)
+	case EncoderMF:
+		// Windows MediaFoundation — Microsoft'ning o'rnatilgan H.264 encoder'i.
+		// OBS, vMix va boshqa software ham shu encoder ishlatadi. libopenh264 ga
+		// nisbatan AFZAL: profile aniq xaritalanadi va YouTube to'liq qabul qiladi.
+		//
+		// MUHIM: h264_mf nv12 pixel format'ni kutadi (yuv420p emas).
+		// Bu buildSingleArgs'da scale filter chiqishini h264_mf uchun nv12 ga
+		// keltirilishi kerak — quyida `pix_fmt nv12` shu uchun.
+		gop := strconv.Itoa(cfg.FPS * 2)
+		args = append(args,
+			"-rate_control", "cbr",
+			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
+			"-g", gop,
+			"-bf", "0",
+			"-pix_fmt", "nv12",
 		)
 	}
 

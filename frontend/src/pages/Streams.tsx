@@ -525,7 +525,8 @@ function StreamFormModal({
                 {hwQ.data?.hasQuickSync && <option value="h264_qsv">Intel QuickSync (GPU)</option>}
                 {hwQ.data?.hasAmf && <option value="h264_amf">AMD AMF (GPU)</option>}
                 {hwQ.data?.hasX264 && <option value="libx264">libx264 (CPU sifatli)</option>}
-                {hwQ.data?.hasOpenH264 && <option value="libopenh264">OpenH264 (CPU fallback)</option>}
+                {hwQ.data?.hasMediaFound && <option value="h264_mf">MediaFoundation (Windows native — YouTube uchun tavsiya)</option>}
+                {hwQ.data?.hasOpenH264 && <option value="libopenh264">OpenH264 (CPU fallback — eski)</option>}
                 <option value="copy">Copy — qayta kodlamaslik (eng yengil)</option>
               </select>
             </div>
