@@ -247,33 +247,46 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 
 	switch enc {
 	case EncoderNVENC:
-		// NVIDIA NVENC — RTX 3060 da real-time osongina
+		// NVIDIA NVENC — RTX 3060 da real-time osongina.
+		// YouTube Live talablariga to'liq mos: profile high, 2-sek fixed keyframe, B-frames yo'q.
+		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
 			"-preset", "p4", // p1=eng tez, p7=eng sifatli; p4=balanced
 			"-tune", "ll", // low latency (live uchun)
+			"-profile:v", "high", // YouTube xohlaydi
 			"-rc", "cbr", // constant bitrate — YouTube xohlaydi
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-maxrate", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
-			"-g", strconv.Itoa(cfg.FPS*2), // har 2 sekundda keyframe
+			"-g", gop, // har 2 sekundda keyframe (YouTube majburiy)
+			"-keyint_min", gop, // qat'iy interval — adaptive emas
+			"-bf", "0", // B-frames yo'q (live latentlik kam, YouTube barqarorroq)
 		)
 	case EncoderQuickSync:
+		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
 			"-preset", "veryfast",
+			"-profile:v", "high",
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-maxrate", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
-			"-g", strconv.Itoa(cfg.FPS*2),
+			"-g", gop,
+			"-keyint_min", gop,
+			"-bf", "0",
 		)
 	case EncoderX264:
 		// CPU encoder — tezroq preset = kamroq sifat lekin kamroq CPU
+		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
 			"-preset", "veryfast",
 			"-tune", "zerolatency",
+			"-profile:v", "high",
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-maxrate", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
-			"-g", strconv.Itoa(cfg.FPS*2),
+			"-g", gop,
+			"-keyint_min", gop,
+			"-sc_threshold", "0", // scene-cut keyframes o'chiriladi
 			"-pix_fmt", "yuv420p", // YouTube'ga mos
 		)
 	case EncoderOpenH264:
@@ -302,6 +315,14 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 }
 
 // buildAudioArgs — Audio map'ni quradi.
+//
+// YouTube talablari:
+//   - AAC-LC codec
+//   - Stereo (2 kanal) — ko'p kameralar mono yuboradi, biz upmix qilamiz
+//   - 44.1 yoki 48 kHz
+//   - 128-160 kbps
+//
+// Hikvision PCM mu-law 8kHz mono → AAC 44.1kHz stereo 128k.
 func buildAudioArgs(cfg StreamConfig) []string {
 	switch cfg.Audio.Mode {
 	case "muted":
@@ -312,10 +333,11 @@ func buildAudioArgs(cfg StreamConfig) []string {
 			idx = 0
 		}
 		return []string{
-			"-map", fmt.Sprintf("%d:a?", idx), // ? — audio bo'lmasa skip
+			"-map", fmt.Sprintf("%d:a?", idx),
 			"-c:a", "aac",
 			"-b:a", "128k",
 			"-ar", "44100",
+			"-ac", "2", // YouTube uchun stereo majburiy
 		}
 	default: // "first" yoki bo'sh
 		return []string{
@@ -323,6 +345,7 @@ func buildAudioArgs(cfg StreamConfig) []string {
 			"-c:a", "aac",
 			"-b:a", "128k",
 			"-ar", "44100",
+			"-ac", "2", // mono → stereo upmix
 		}
 	}
 }

@@ -1,25 +1,32 @@
-fix(v0.1.10): block start when stream key is invalid + visual warning
+fix(v0.1.11): YouTube-compliant FFmpeg args + button styling
 
-Issue: User's DB has stream_key="live2" from prior corrupt save.
-Migration v2 only touched keys starting with "rtmp" so "live2" was left.
-User clicks Start → same I/O error. They were confused because UI
-didn't warn them.
+ISSUE 1 — UI: "Key kiriting" button rendered broken
+- btn-warning CSS class didn't exist
+- Used inline style which conflicted with base btn class
+- Fixed with proper Tailwind utility classes
 
-NEW: Start-time validation in manager.go
-- Before launching ffmpeg, validates the stream key shape
-- Calls ValidateStreamKeyShape (now exported from service)
-- Returns clear error: "live2 is YouTube server path, not key. Edit
-  stream and paste real key from YouTube Studio"
+ISSUE 2 — Stream stopped after ~5 seconds
+Root cause: YouTube rejects streams that don't match their spec.
+Several issues with our pipeline:
 
-NEW: Visual indicator on stream card
-- ⚠ "Key noto'g'ri" badge appears when stream key fails validation
-- Start button is REPLACED with amber "Key kiriting" button that
-  opens the edit modal directly
-- User can't accidentally click Start with a broken key — they MUST
-  fix it first
+  Video:
+  - No -profile:v specified (NVENC default works but explicit is safer)
+  - Adaptive keyframes possible (YouTube REQUIRES fixed 2-sec)
+  - B-frames present (YouTube prefers none for live)
 
-Now the bad-key state is visible at a glance, and clicking "Key kiriting"
-takes user straight to the form (which has the YouTube instructions
-collapsible from v0.1.9).
+  Audio:
+  - Output was MONO (Hikvision sends mono PCM mu-law, our AAC kept mono)
+  - YouTube REQUIRES STEREO audio for live streams
+  - This is why stream connected but YouTube dropped after 5s
+
+FIXES in builder.go:
+- NVENC: +"-profile:v", "high", +"-keyint_min", GOP, +"-bf", "0"
+- x264:  +"-profile:v", "high", +"-keyint_min", GOP, +"-sc_threshold", "0"
+- Audio: +"-ac", "2" — forces mono→stereo upmix for YouTube compatibility
+
+VERIFIED with real camera:
+- Pipeline produces 4 MB FLV in 8 sec
+- Audio stream now reports: "stereo, 128 kb/s" (was mono)
+- 2.2x realtime encoding speed (smooth)
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

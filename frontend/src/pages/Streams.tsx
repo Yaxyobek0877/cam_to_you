@@ -161,8 +161,7 @@ export function Streams() {
                     ) : !keyValid ? (
                       <button
                         onClick={() => setEditing(s)}
-                        className="btn-warning"
-                        style={{ background: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", borderColor: "rgba(245, 158, 11, 0.3)" }}
+                        className="btn bg-warning/20 text-warning hover:bg-warning/30 border border-warning/30"
                       >
                         <Edit2 className="w-4 h-4" />
                         Key kiriting
