@@ -181,21 +181,22 @@ var suspiciousKeyValues = map[string]bool{
 	"flv": true, "channel": true, "ingest": true,
 }
 
-// validateStreamKeyShape — key tashqi ko'rinishi bo'yicha tekshiruv.
+// ValidateStreamKeyShape — key tashqi ko'rinishi bo'yicha tekshiruv (eksport qilingan).
+// Manager.Start() ham bu funksiyani chaqirishi mumkin.
 // Maqsad: foydalanuvchini noaniq "I/O error" emas, aniq xato xabari bilan ogohlantirish.
-func validateStreamKeyShape(key string) error {
+func ValidateStreamKeyShape(key string) error {
 	if len(key) < 10 {
-		return fmt.Errorf("stream key juda qisqa (%d ta belgi) — YouTube Studio'dan to'liq key oling (~16-25 belgi, masalan: xxxx-xxxx-xxxx-xxxx)", len(key))
+		return fmt.Errorf("stream key juda qisqa (%d ta belgi) — YouTube Studio'dan to'liq key oling (~16-25 belgi, masalan: xxxx-xxxx-xxxx-xxxx-xxxx). Stream'ni tahrirlab haqiqiy key kiriting", len(key))
 	}
 	if suspiciousKeyValues[strings.ToLower(key)] {
-		return fmt.Errorf("\"%s\" — bu serverning yo'l qismi, stream key emas. YouTube Studio → Go Live → Stream key qismidan to'liq qiymatni nusxalang", key)
-	}
-	// Faqat path segmenti bo'lib qolgan bo'lishi mumkin (no dashes, all letters)
-	if !strings.ContainsAny(key, "-_") && len(key) < 15 {
-		// Real YouTube key'lar deyarli har doim chiziqcha bilan
-		// Cheklov bermayman — ehtimol custom platforma — lekin warning yetarli
+		return fmt.Errorf("\"%s\" — bu YouTube serverining yo'l qismi, stream key emas. YouTube Studio → Go Live → Stream key qismidan key'ni nusxalang va stream'ni tahrirlab kiriting", key)
 	}
 	return nil
+}
+
+// validateStreamKeyShape — ichki ishlatish uchun alias.
+func validateStreamKeyShape(key string) error {
+	return ValidateStreamKeyShape(key)
 }
 
 type scanner interface {

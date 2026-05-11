@@ -111,6 +111,10 @@ export function Streams() {
           {streams.map((s) => {
             const st = status[s.id];
             const isRunning = st?.state === "running" || st?.state === "starting";
+            // Stream key validatsiyasi (faqat non-custom platform uchun)
+            const keyValid = s.platform === "custom"
+              ? !!s.customUrl
+              : validateKey(s.streamKey).ok;
             return (
               <div key={s.id} className="card p-4">
                 <div className="flex items-center justify-between gap-4">
@@ -122,6 +126,11 @@ export function Streams() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold truncate">{s.name}</h3>
                         <StateBadge state={st?.state ?? "idle"} />
+                        {!keyValid && (
+                          <span className="badge-danger text-xs" title="Stream key noto'g'ri">
+                            ⚠ Key noto'g'ri
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {layoutInfo[s.layout].label} • {s.quality} • {s.platform}
@@ -148,6 +157,15 @@ export function Streams() {
                       >
                         <Square className="w-4 h-4" />
                         To'xtatish
+                      </button>
+                    ) : !keyValid ? (
+                      <button
+                        onClick={() => setEditing(s)}
+                        className="btn-warning"
+                        style={{ background: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", borderColor: "rgba(245, 158, 11, 0.3)" }}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        Key kiriting
                       </button>
                     ) : (
                       <button

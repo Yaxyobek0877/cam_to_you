@@ -133,6 +133,14 @@ func (m *Manager) Start(ctx context.Context, streamID int64) error {
 		return fmt.Errorf("stream topilmadi: %w", err)
 	}
 
+	// Stream key shaklini tekshiramiz — eski bazada noto'g'ri saqlanganlarni
+	// FFmpeg'ga bermaslik uchun (aniq xato xabari beriladi).
+	if st.Platform != models.PlatformCustom {
+		if err := ValidateStreamKeyShape(st.StreamKey); err != nil {
+			return err
+		}
+	}
+
 	// Kameralarni olamiz
 	cams, err := m.cameraSvc.GetMany(ctx, st.CameraIDs)
 	if err != nil {
