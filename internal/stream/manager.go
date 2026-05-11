@@ -273,10 +273,19 @@ func (m *Manager) supervise(ctx context.Context, sr *streamRunner, args []string
 
 		m.emit(Event{Type: EventRestart, StreamID: sr.stream.ID, Payload: sr.restartCount})
 
-		// Exponential backoff: 5s, 10s, 20s, 40s — lekin 5 daqiqadan oshmaydi
-		delay := time.Duration(sr.stream.RestartDelayMs) * time.Millisecond
-		for i := 1; i < sr.restartCount && delay < 5*time.Minute; i++ {
-			delay *= 2
+		// Restart delay: birinchi 5 marta — qisqa (2s), keyin exponential backoff
+		// Qisqa delay kamera vaqtli uzilishlarda stream'ning uzilishini minimallashtirishadi.
+		baseDelay := time.Duration(sr.stream.RestartDelayMs) * time.Millisecond
+		if baseDelay > 2*time.Second {
+			baseDelay = 2 * time.Second // tez restart uchun
+		}
+		delay := baseDelay
+		if sr.restartCount > 5 {
+			// 6-urinishdan boshlab exponential — agar muammo doimiy bo'lsa
+			extra := sr.restartCount - 5
+			for i := 0; i < extra && delay < 5*time.Minute; i++ {
+				delay *= 2
+			}
 		}
 		if delay > 5*time.Minute {
 			delay = 5 * time.Minute

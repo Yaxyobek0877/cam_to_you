@@ -543,6 +543,22 @@ function StreamFormModal({
             </div>
           )}
 
+          {/* HEVC manba kameralari uchun tavsiya (Hikvision odatda HEVC yuboradi) */}
+          {form.encoder !== "copy" && (
+            <div className="card bg-accent/5 border-accent/20 p-3 text-xs">
+              <p className="font-medium text-accent mb-1">💡 Eng barqaror yo'l — Sub-stream + Copy</p>
+              <p className="text-gray-300 mb-2">
+                Hikvision kameralar odatda <strong>HEVC (H.265)</strong> yuboradi. YouTube esa H.264 kutadi. Transcoding (HEVC→H.264) ba'zan kamerani uzilishga olib keladi.
+              </p>
+              <ol className="space-y-1 text-gray-300 ml-2 list-decimal list-inside">
+                <li>Cameras → kamerangizni tahrirlang</li>
+                <li><strong>"Sub-stream"</strong> ni yoqing — kamera 720p H.264 yuboradi</li>
+                <li>Bu yerda Encoder: <strong>"Copy"</strong> tanlang</li>
+                <li>Natija: <strong>0% CPU, eng barqaror oqim</strong></li>
+              </ol>
+            </div>
+          )}
+
           <div>
             <label className="label">Audio</label>
             <select

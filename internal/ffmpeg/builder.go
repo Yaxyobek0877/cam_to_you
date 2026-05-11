@@ -119,14 +119,22 @@ func Build(cfg StreamConfig) ([]string, error) {
 	args = append(args, "-hide_banner", "-loglevel", "info")
 
 	// 2) Har bir kamera uchun -i bilan kirish
-	// fflags: korrupt paketlarni tashlash, PTS muammolarini avtomatik tuzatish — barqarorroq oqim
-	args = append(args, "-fflags", "+genpts+discardcorrupt")
+	// NVENC encoder bo'lsa, CUDA hardware decode'ni yoqamiz —
+	// HEVC kameralar uchun ZARUR (CPU decode realtime'dan sekin va
+	// RTSP buferi to'ladi, kamera ulanishni yopadi).
+	useCudaDecode := cfg.Encoder == EncoderNVENC
+
 	for i := 0; i < needed; i++ {
 		cam := cfg.Cameras[i]
+
+		// CUDA hardware decode — HEVC manba uchun katta tezlik (RTX 3060)
+		if useCudaDecode {
+			args = append(args, "-hwaccel", "cuda", "-hwaccel_output_format", "cuda")
+		}
+
 		if cam.UseTCP {
 			args = append(args, "-rtsp_transport", "tcp")
 		}
-		// FFmpeg 7+'da socket timeout uchun universal opsiya yo'q.
 		args = append(args, "-i", cam.RTSPURL)
 	}
 
@@ -170,13 +178,18 @@ func isRTMP(url string) bool {
 //
 // MUHIM: -map 0:v explicit qo'shilgan. Bu kerak, chunki buildAudioArgs
 // "-map 0:a?" ishlatadi va FFmpeg har qanday -map ishlatilganda
-// avtomatik stream tanlashni o'chiradi. Video map'siz qolib ketmasligi uchun.
+// avtomatik stream tanlashni o'chiradi.
 func buildSingleArgs(cfg StreamConfig) []string {
 	args := []string{"-map", "0:v"}
 	if cfg.Encoder == EncoderCopy {
-		// Qayta kodlash yo'q — eng yengil
+		// Qayta kodlash yo'q — eng yengil (Sub-stream H.264 bilan IDEAL)
 		args = append(args, "-c:v", "copy")
 		return args
+	}
+	// NVENC + CUDA hardware path bilan -vf format conflict. Faqat CPU
+	// encoderlarda format konvertatsiyasi.
+	if cfg.Encoder != EncoderNVENC {
+		args = append(args, "-vf", "format=yuv420p")
 	}
 	args = append(args, videoEncodeArgs(cfg)...)
 	return args
@@ -267,20 +280,22 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 	switch enc {
 	case EncoderNVENC:
 		// NVIDIA NVENC — RTX 3060 da real-time osongina.
-		// YouTube Live talablariga to'liq mos: profile high, 2-sek fixed keyframe, B-frames yo'q.
+		// p1 (eng tez) preset — HEVC→H.264 transcode uchun zarur, p4 sekinroq.
+		// CUDA hardware decode (input args'da yoqilgan) bilan ishlatiladi.
+		// -pix_fmt yuv420p OLIB TASHLANDI — CUDA path bilan mos kelmaydi.
+		// Output yuvj420p bo'ladi, YouTube qabul qiladi.
 		gop := strconv.Itoa(cfg.FPS * 2)
 		args = append(args,
-			"-preset", "p4", // p1=eng tez, p7=eng sifatli; p4=balanced
-			"-tune", "ll", // low latency (live uchun)
+			"-preset", "p1", // p1=eng tez (live uchun zarur)
+			"-tune", "ll", // low latency
 			"-profile:v", "high", // YouTube xohlaydi
-			"-rc", "cbr", // constant bitrate — YouTube xohlaydi
+			"-rc", "cbr", // constant bitrate
 			"-b:v", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-maxrate", strconv.Itoa(cfg.BitrateKbps)+"k",
 			"-bufsize", strconv.Itoa(cfg.BitrateKbps*2)+"k",
-			"-g", gop, // har 2 sekundda keyframe (YouTube majburiy)
-			"-keyint_min", gop, // qat'iy interval — adaptive emas
-			"-bf", "0", // B-frames yo'q (live latentlik kam, YouTube barqarorroq)
-			"-pix_fmt", "yuv420p", // YouTube'ga mos, swscaler warning yo'q
+			"-g", gop, // har 2 sek keyframe (YouTube majburiy)
+			"-keyint_min", gop, // qat'iy interval
+			"-bf", "0", // B-frames yo'q
 		)
 	case EncoderQuickSync:
 		gop := strconv.Itoa(cfg.FPS * 2)
@@ -335,7 +350,10 @@ func videoEncodeArgs(cfg StreamConfig) []string {
 		)
 	}
 
-	args = append(args, "-r", strconv.Itoa(cfg.FPS))
+	// -r OLIB TASHLANDI: kamera fps'ini source'dan o'tkazamiz.
+	// Aks holda Hikvision 25fps source 30fps'ga majburlanib, frame duplication
+	// va PTS muammolarini chiqaradi (kamera RTSP ulanishni yopib qo'yadi).
+	// User'ning quality.FPS GOP hisoblash uchun saqlanadi (g, keyint_min).
 	return args
 }
 
