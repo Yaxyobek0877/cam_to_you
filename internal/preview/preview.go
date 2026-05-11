@@ -24,13 +24,32 @@ import (
 	"cam_to_you/internal/ffmpeg"
 )
 
+// EventType — preview hodisalari turlari.
+type EventType string
+
+const (
+	EventStarting   EventType = "starting"   // preview ishga tushyapti
+	EventReady      EventType = "ready"      // birinchi segment yozildi, video tayyor
+	EventLog        EventType = "log"        // FFmpeg log qatori
+	EventError      EventType = "error"      // xatolik
+	EventStopped    EventType = "stopped"    // to'xtatildi
+)
+
+// Event — preview servisidan UI'ga uzatiladigan hodisalar.
+type Event struct {
+	Type     EventType   `json:"type"`
+	CameraID int64       `json:"cameraId"`
+	Payload  interface{} `json:"payload,omitempty"`
+}
+
 // Service — aktiv preview'larni boshqaradi.
 type Service struct {
 	ffmpegBin  string // ffmpeg.exe yo'li
 	previewDir string // %APPDATA%\Cam2You\previews
 
-	mu     sync.RWMutex
-	active map[int64]*session
+	mu          sync.RWMutex
+	active      map[int64]*session
+	subscribers []chan Event
 }
 
 // session — bitta aktiv preview.
@@ -56,6 +75,38 @@ func (s *Service) SetFFmpegBin(bin string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ffmpegBin = bin
+}
+
+// Subscribe — preview hodisalarini berilgan kanalga yuboradi.
+// Unsubscribe — qaytarilgan funksiyani chaqiring.
+func (s *Service) Subscribe(ch chan Event) (unsubscribe func()) {
+	s.mu.Lock()
+	s.subscribers = append(s.subscribers, ch)
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, c := range s.subscribers {
+			if c == ch {
+				s.subscribers = append(s.subscribers[:i], s.subscribers[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+// emit — hodisani barcha subscriber'larga yuboradi (non-blocking).
+func (s *Service) emit(e Event) {
+	s.mu.RLock()
+	subs := make([]chan Event, len(s.subscribers))
+	copy(subs, s.subscribers)
+	s.mu.RUnlock()
+	for _, ch := range subs {
+		select {
+		case ch <- e:
+		default:
+		}
+	}
 }
 
 // Start — kamera uchun preview boshqalaydi. Allaqachon ishlayotgan bo'lsa, hech narsa qilmaydi.
@@ -129,23 +180,105 @@ func (s *Service) Start(cameraID int64, rtspURL string) error {
 	s.active[cameraID] = sess
 	s.mu.Unlock()
 
+	s.emit(Event{Type: EventStarting, CameraID: cameraID, Payload: map[string]interface{}{
+		"encoder": enc,
+		"rtspUrl": maskRTSPCredentials(rtspURL),
+	}})
+
 	if err := runner.Start(ctx); err != nil {
 		s.mu.Lock()
 		delete(s.active, cameraID)
 		s.mu.Unlock()
 		cancel()
+		s.emit(Event{Type: EventError, CameraID: cameraID, Payload: err.Error()})
 		return fmt.Errorf("ffmpeg ishga tushmadi: %w", err)
 	}
 
-	// Process chiqsa — xaritadan o'chiramiz
+	// FFmpeg log'larini hodisa sifatida uzatamiz
+	logCh := make(chan ffmpeg.LogLine, 100)
+	unsubLogs := runner.Subscribe(logCh)
+	go s.forwardLogs(cameraID, logCh)
+
+	// Birinchi segment yaratilganini kuzatamiz — bu UI'ga "Ready" signali bo'ladi
+	go s.watchReady(cameraID, camDir)
+
+	// Process chiqsa — xaritadan o'chiramiz va hodisani emit qilamiz
 	go func() {
 		<-runner.Done()
+		unsubLogs()
+		close(logCh)
+
+		state := runner.State()
+		errMsg := runner.LastError()
+
 		s.mu.Lock()
 		delete(s.active, cameraID)
 		s.mu.Unlock()
+
+		if state == ffmpeg.StateError {
+			s.emit(Event{Type: EventError, CameraID: cameraID, Payload: errMsg})
+		} else {
+			s.emit(Event{Type: EventStopped, CameraID: cameraID})
+		}
 	}()
 
 	return nil
+}
+
+// watchReady — index.m3u8 va birinchi segment yozilganini kutadi,
+// keyin EventReady ni emit qiladi (UI "playing"ga o'tadi).
+func (s *Service) watchReady(cameraID int64, camDir string) {
+	indexPath := filepath.Join(camDir, "index.m3u8")
+	deadline := time.Now().Add(30 * time.Second)
+
+	for time.Now().Before(deadline) {
+		// preview to'xtatilganmi?
+		if !s.IsActive(cameraID) {
+			return
+		}
+		info, err := os.Stat(indexPath)
+		if err == nil && info.Size() > 50 {
+			// Birinchi segment yozilgan
+			s.emit(Event{Type: EventReady, CameraID: cameraID})
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	// 30s ichida tayyor bo'lmadi — xato emit qilamiz, lekin runner ishlasa to'xtatmaymiz
+	s.emit(Event{Type: EventError, CameraID: cameraID, Payload: "30 sekund ichida video oqimi tayyor bo'lmadi"})
+}
+
+// forwardLogs — FFmpeg loglarini preview hodisalariga aylantiradi.
+func (s *Service) forwardLogs(cameraID int64, logCh <-chan ffmpeg.LogLine) {
+	for ll := range logCh {
+		// info darajadagi loglarni o'tkazib yuboramiz (juda ko'p)
+		if ll.Level == ffmpeg.LogInfo {
+			continue
+		}
+		s.emit(Event{
+			Type:     EventLog,
+			CameraID: cameraID,
+			Payload: map[string]interface{}{
+				"time":    ll.Time.Format(time.RFC3339),
+				"level":   string(ll.Level),
+				"message": ll.Message,
+			},
+		})
+	}
+}
+
+// maskRTSPCredentials — RTSP URL'dagi user:pass'ni "***"ga almashtiradi (log uchun xavfsizroq).
+func maskRTSPCredentials(url string) string {
+	// rtsp://user:pass@host:port/path → rtsp://***@host:port/path
+	atIdx := strings.LastIndex(url, "@")
+	if atIdx == -1 {
+		return url
+	}
+	schemeEnd := strings.Index(url, "://")
+	if schemeEnd == -1 || schemeEnd >= atIdx {
+		return url
+	}
+	return url[:schemeEnd+3] + "***@" + url[atIdx+1:]
 }
 
 // Stop — preview'ni to'xtatadi va fayllarni tozalaydi.
@@ -167,6 +300,7 @@ func (s *Service) Stop(cameraID int64) error {
 		time.Sleep(500 * time.Millisecond)
 		_ = os.RemoveAll(sess.dir)
 	}()
+	s.emit(Event{Type: EventStopped, CameraID: cameraID})
 	return nil
 }
 

@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Camera,
   Radio,
+  ScrollText,
   Settings,
   Minimize2,
   Power,
@@ -15,6 +16,7 @@ const navItems = [
   { to: "/dashboard", label: "Boshqaruv paneli", icon: LayoutDashboard },
   { to: "/cameras", label: "Kameralar", icon: Camera },
   { to: "/streams", label: "Streamlar", icon: Radio },
+  { to: "/logs", label: "Loglar", icon: ScrollText },
   { to: "/settings", label: "Sozlamalar", icon: Settings },
 ];
 

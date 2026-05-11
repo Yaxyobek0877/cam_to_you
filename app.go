@@ -103,6 +103,11 @@ func (a *App) startup(ctx context.Context) {
 	a.streamMgr.Subscribe(events)
 	go a.forwardEvents(events)
 
+	// 7b) Preview hodisalari — kamera live ko'rish uchun
+	previewEvents := make(chan preview.Event, 100)
+	a.previewSvc.Subscribe(previewEvents)
+	go a.forwardPreviewEvents(previewEvents)
+
 	// 8) System tray
 	a.trayIcon = tray.New(tray.Callbacks{
 		OnShow: func() {
@@ -151,6 +156,14 @@ func (a *App) shutdown(ctx context.Context) {
 func (a *App) forwardEvents(events <-chan stream.Event) {
 	for ev := range events {
 		wailsruntime.EventsEmit(a.ctx, "stream:event", ev)
+	}
+}
+
+// forwardPreviewEvents — preview servisidan kelgan hodisalarni UI'ga uzatadi.
+// React'da `EventsOn("preview:event", ...)` bilan tinglanadi.
+func (a *App) forwardPreviewEvents(events <-chan preview.Event) {
+	for ev := range events {
+		wailsruntime.EventsEmit(a.ctx, "preview:event", ev)
 	}
 }
 

@@ -61,6 +61,10 @@ export const onStreamEvent = (callback: (data: unknown) => void) => {
   return EventsOn("stream:event", callback);
 };
 
+export const onPreviewEvent = (callback: (data: unknown) => void) => {
+  return EventsOn("preview:event", callback);
+};
+
 export const onFFmpegProgress = (callback: (data: unknown) => void) => {
   return EventsOn("ffmpeg:progress", callback);
 };

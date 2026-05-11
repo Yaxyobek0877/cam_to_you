@@ -122,9 +122,10 @@ func Build(cfg StreamConfig) ([]string, error) {
 		if cam.UseTCP {
 			args = append(args, "-rtsp_transport", "tcp")
 		}
-		// Qisqa zaif ulanishlar uchun timeout — yangi ffmpeg'da -stimeout o'rniga -rw_timeout
-		// (eski versiyada -stimeout, FFmpeg 7+ versiyada olib tashlandi)
-		args = append(args, "-rw_timeout", "10000000") // 10 sekund mikrosekundlarda
+		// FFmpeg 7+'da socket timeout uchun universal opsiya yo'q.
+		// -stimeout olib tashlandi, -rw_timeout faqat ffprobe'da ishlaydi.
+		// TCP standart timeout (60-120s) bilan kifoyalanamiz —
+		// agar kamera javob bermasa, foydalanuvchi Stop'ni bosadi.
 		args = append(args, "-i", cam.RTSPURL)
 	}
 

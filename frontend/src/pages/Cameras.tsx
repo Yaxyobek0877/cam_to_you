@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Plus, Camera as CameraIcon, Edit2, Trash2, Wifi, X, Loader2, CheckCircle2, AlertTriangle, Play } from "lucide-react";
 import {
   listCameras,
@@ -9,7 +10,6 @@ import {
   probeCamera,
 } from "../lib/api";
 import type { Camera, ProbeResult } from "../lib/types";
-import { PreviewModal } from "../components/PreviewModal";
 import { PasswordInput } from "../components/PasswordInput";
 import { useEscapeKey } from "../lib/hooks";
 
@@ -27,9 +27,9 @@ const emptyCamera: Partial<Camera> = {
 
 export function Cameras() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const camerasQ = useQuery({ queryKey: ["cameras"], queryFn: listCameras });
   const [editing, setEditing] = useState<Partial<Camera> | null>(null);
-  const [previewing, setPreviewing] = useState<Camera | null>(null);
 
   const delMut = useMutation({
     mutationFn: deleteCamera,
@@ -76,7 +76,7 @@ export function Cameras() {
             <CameraCard
               key={c.id}
               camera={c}
-              onPreview={() => setPreviewing(c)}
+              onPreview={() => navigate(`/cameras/${c.id}/preview`)}
               onEdit={() => setEditing(c)}
               onDelete={() => {
                 if (confirm(`"${c.name}" o'chirilsinmi?`)) delMut.mutate(c.id);
@@ -94,13 +94,6 @@ export function Cameras() {
             setEditing(null);
             qc.invalidateQueries({ queryKey: ["cameras"] });
           }}
-        />
-      )}
-
-      {previewing && (
-        <PreviewModal
-          camera={previewing}
-          onClose={() => setPreviewing(null)}
         />
       )}
     </div>
